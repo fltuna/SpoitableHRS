@@ -57,19 +57,27 @@ jobs:
           $version = "${{ steps.version.outputs.version }}"
           $bundleDir = "src-tauri/target/release/bundle/nsis"
 
-          $nsisZip = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip" | Select-Object -First 1
-          $nsisSig = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip.sig" | Select-Object -First 1
-          $nsisExe = Get-ChildItem -Path $bundleDir -Filter "*.exe" | Select-Object -First 1
+          Write-Host "=== Bundle directory contents ==="
+          Get-ChildItem -Path $bundleDir -Recurse | ForEach-Object { Write-Host $_.FullName }
 
-          Write-Output "nsis_zip=$($nsisZip.FullName)" >> $env:GITHUB_OUTPUT
-          Write-Output "nsis_sig=$($nsisSig.FullName)" >> $env:GITHUB_OUTPUT
+          $nsisExe = Get-ChildItem -Path $bundleDir -Filter "*.exe" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path $bundleDir -Filter "*.sig" | Select-Object -First 1
+
+          if (-not $nsisExe) { Write-Error "No exe found"; exit 1 }
+
           Write-Output "nsis_exe=$($nsisExe.FullName)" >> $env:GITHUB_OUTPUT
 
-          $sig = Get-Content $nsisSig.FullName -Raw
-          Write-Output "sig=$sig" >> $env:GITHUB_OUTPUT
+          if ($nsisSig) {
+            Write-Output "nsis_sig=$($nsisSig.FullName)" >> $env:GITHUB_OUTPUT
+            $sig = Get-Content $nsisSig.FullName -Raw
+            Write-Output "sig=$($sig.Trim())" >> $env:GITHUB_OUTPUT
+            Write-Host "Found sig: $($nsisSig.Name)"
+          } else {
+            Write-Host "WARNING: No .sig file found"
+            Write-Output "sig=" >> $env:GITHUB_OUTPUT
+          }
 
-          Write-Host "Found zip: $($nsisZip.Name)"
-          Write-Host "Found sig: $($nsisSig.Name)"
+          Write-Output "exe_name=$($nsisExe.Name)" >> $env:GITHUB_OUTPUT
           Write-Host "Found exe: $($nsisExe.Name)"
 
       - name: Create GitHub Release
@@ -78,9 +86,8 @@ jobs:
           name: SpoitableHRS v${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
-            ${{ steps.artifacts.outputs.nsis_zip }}
-            ${{ steps.artifacts.outputs.nsis_sig }}
             ${{ steps.artifacts.outputs.nsis_exe }}
+            ${{ steps.artifacts.outputs.nsis_sig }}
 
       - name: Update CFW KV with latest version
         env:
@@ -90,7 +97,8 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           SIG="${{ steps.artifacts.outputs.sig }}"
-          DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/SpoitableHRS_${VERSION}_x64-setup.nsis.zip"
+          EXE_NAME="${{ steps.artifacts.outputs.exe_name }}"
+          DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/${EXE_NAME}"
 
           npx wrangler kv:key put \
             --namespace-id 44b426708e1f42b1aac00e082ec40de5 \
