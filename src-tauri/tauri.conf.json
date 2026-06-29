@@ -1,6 +1,6 @@
 {
   "productName": "SpoitableHRS",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.spoitable.hrs",
   "build": {
     "frontendDist": "../src",
@@ -41,10 +41,10 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "allowDowngrades": true,
       "nsis": {
         "installMode": "currentUser",
-        "startMenuFolder": "SpoitableHRS",
-        "allowDowngrades": true
+        "startMenuFolder": "SpoitableHRS"
       }
     }
   }
