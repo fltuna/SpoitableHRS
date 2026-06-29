@@ -527,6 +527,11 @@ async function loadAllSettings() {
 
 loadAllSettings();
 updateConnectionUI();
+
+invoke("plugin:app|version").then(v => {
+  document.getElementById("appVersion").textContent = `v${v}`;
+}).catch(() => {});
+
 addLog("SpoitableHRS initialized");
 
 // ── Update check (manual) ──
