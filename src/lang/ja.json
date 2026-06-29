@@ -36,6 +36,13 @@
   "settings.aboutHeader": "このアプリについて",
   "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
 
+  "sidebar.monitor": "モニター",
+  "sidebar.overlay": "オーバーレイ",
+  "sidebar.settings": "設定",
+  "sidebar.log": "ログ",
+
+  "notification.minimized": "システムトレイに最小化しました。トレイアイコンをクリックで復元します。",
+
   "zone.rest": "安静ゾーン",
   "zone.light": "軽度ゾーン",
   "zone.moderate": "中度ゾーン",

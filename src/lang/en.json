@@ -36,6 +36,13 @@
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
 
+  "sidebar.monitor": "Monitor",
+  "sidebar.overlay": "Overlay",
+  "sidebar.settings": "Settings",
+  "sidebar.log": "Log",
+
+  "notification.minimized": "Minimized to system tray. Click the tray icon to restore.",
+
   "zone.rest": "Rest Zone",
   "zone.light": "Light Zone",
   "zone.moderate": "Moderate Zone",

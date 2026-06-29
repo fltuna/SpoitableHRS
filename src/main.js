@@ -29,8 +29,19 @@ document.querySelector(".top-backdrop").addEventListener("mousedown", (e) => {
     invoke("plugin:window|start_dragging", { label: "main" });
   }
 });
-document.getElementById("minimizeBtn").addEventListener("click", () => {
-  invoke("plugin:window|minimize", { label: "main" });
+document.getElementById("minimizeBtn").addEventListener("click", async () => {
+  invoke("plugin:window|hide", { label: "main" });
+  try {
+    await invoke("plugin:notification|request_permission");
+    await invoke("plugin:notification|notify", {
+      options: {
+        title: "SpoitableHRS",
+        body: t("notification.minimized") || "Minimized to system tray. Click the tray icon to restore.",
+      }
+    });
+  } catch (e) {
+    console.error("Notification failed:", e);
+  }
 });
 document.getElementById("closeBtn").addEventListener("click", () => {
   invoke("plugin:window|close", { label: "main" });
