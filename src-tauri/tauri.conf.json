@@ -1,6 +1,6 @@
 {
   "productName": "SpoitableHRS",
-  "version": "2026.06.30",
+  "version": "2026.630.0",
   "identifier": "dev.f2a.spoitablehrs",
   "build": {
     "frontendDist": "../src",
