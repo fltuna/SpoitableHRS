@@ -20,7 +20,6 @@ body {
   height: 32px;
   padding: 0 4px 0 12px;
   background: #12122a;
-  -webkit-app-region: drag;
 }
 
 .titlebar-title {
@@ -32,7 +31,6 @@ body {
 
 .titlebar-buttons {
   display: flex;
-  -webkit-app-region: no-drag;
 }
 
 .titlebar-btn {
@@ -377,6 +375,106 @@ body {
 .setting-placeholder {
   font-size: 13px;
   color: #555;
+}
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.modal {
+  background: #16213e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  width: 340px;
+  max-height: 400px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #333;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.modal-close:hover {
+  background: #333;
+  color: #eee;
+}
+
+.modal-body {
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-scanning {
+  text-align: center;
+  padding: 24px;
+  color: #888;
+  font-size: 13px;
+}
+
+.device-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.device-item:hover {
+  background: #1a1a2e;
+}
+
+.device-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.device-id {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.device-arrow {
+  color: #555;
+  font-size: 14px;
+}
+
+.modal-empty {
+  text-align: center;
+  padding: 24px;
+  color: #666;
+  font-size: 13px;
 }
 
 .status {

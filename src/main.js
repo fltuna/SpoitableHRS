@@ -1,6 +1,16 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F12") e.preventDefault();
+});
+
+document.getElementById("titlebar").addEventListener("mousedown", (e) => {
+  if (e.button === 0 && e.target.closest(".titlebar-buttons") === null) {
+    invoke("plugin:window|start_dragging", { label: "main" });
+  }
+});
 document.getElementById("minimizeBtn").addEventListener("click", () => {
   invoke("plugin:window|minimize", { label: "main" });
 });
@@ -10,16 +20,16 @@ document.getElementById("closeBtn").addEventListener("click", () => {
 
 const bpmEl = document.getElementById("bpm");
 const heartEl = document.getElementById("heart");
-const scanBtn = document.getElementById("scanBtn");
-const deviceList = document.getElementById("deviceList");
-const connectBtn = document.getElementById("connectBtn");
+const scanConnectBtn = document.getElementById("scanConnectBtn");
+const deviceModal = document.getElementById("deviceModal");
+const deviceListBody = document.getElementById("deviceListBody");
+const modalCloseBtn = document.getElementById("modalCloseBtn");
 const statusEl = document.getElementById("status");
 const logContainer = document.getElementById("logContainer");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const hrCanvas = document.getElementById("hrCanvas");
 
 let isConnected = false;
-let selectedDeviceId = null;
 let beatTimeout = null;
 
 // HR Graph
@@ -154,36 +164,7 @@ listen("ble-log", (event) => {
   addLog(message, level);
 });
 
-scanBtn.addEventListener("click", async () => {
-  statusEl.textContent = "Scanning...";
-  addLog("Starting BLE scan...");
-  scanBtn.disabled = true;
-  try {
-    const devices = await invoke("scan_devices");
-    deviceList.innerHTML = '<option value="">-- Select Device --</option>';
-    devices.forEach((d) => {
-      const opt = document.createElement("option");
-      opt.value = d.id;
-      opt.textContent = d.name;
-      deviceList.appendChild(opt);
-    });
-    deviceList.disabled = false;
-    statusEl.textContent = `Found ${devices.length} device(s)`;
-    addLog(`Scan complete: ${devices.length} device(s) found`);
-    devices.forEach((d) => addLog(`  ${d.name} (${d.id})`));
-  } catch (e) {
-    statusEl.textContent = `Scan failed: ${e}`;
-    addLog(`Scan failed: ${e}`, "error");
-  }
-  scanBtn.disabled = false;
-});
-
-deviceList.addEventListener("change", () => {
-  selectedDeviceId = deviceList.value || null;
-  connectBtn.disabled = !selectedDeviceId;
-});
-
-connectBtn.addEventListener("click", async () => {
+scanConnectBtn.addEventListener("click", async () => {
   if (isConnected) {
     addLog("Disconnecting...");
     await invoke("disconnect_device");
@@ -192,16 +173,59 @@ connectBtn.addEventListener("click", async () => {
     updateUI();
     statusEl.textContent = "Disconnected";
     addLog("Disconnected");
-  } else if (selectedDeviceId) {
-    statusEl.textContent = "Connecting...";
-    addLog(`Connecting to ${selectedDeviceId}...`);
-    try {
-      await invoke("connect_device", { deviceId: selectedDeviceId });
-    } catch (e) {
-      statusEl.textContent = `Connection failed: ${e}`;
-      addLog(`Connection failed: ${e}`, "error");
-    }
+    return;
   }
+
+  deviceModal.classList.add("active");
+  deviceListBody.innerHTML = '<div class="modal-scanning">Scanning...</div>';
+  addLog("Starting BLE scan...");
+
+  try {
+    const devices = await invoke("scan_devices");
+    addLog(`Scan complete: ${devices.length} device(s) found`);
+    devices.forEach((d) => addLog(`  ${d.name} (${d.id})`));
+
+    if (devices.length === 0) {
+      deviceListBody.innerHTML = '<div class="modal-empty">No devices found</div>';
+      return;
+    }
+
+    deviceListBody.innerHTML = "";
+    devices.forEach((d) => {
+      const item = document.createElement("div");
+      item.className = "device-item";
+      item.innerHTML = `
+        <div>
+          <div class="device-name">${d.name}</div>
+          <div class="device-id">${d.id}</div>
+        </div>
+        <span class="device-arrow">&#x203A;</span>
+      `;
+      item.addEventListener("click", async () => {
+        deviceModal.classList.remove("active");
+        statusEl.textContent = "Connecting...";
+        addLog(`Connecting to ${d.id}...`);
+        try {
+          await invoke("connect_device", { deviceId: d.id });
+        } catch (e) {
+          statusEl.textContent = `Connection failed: ${e}`;
+          addLog(`Connection failed: ${e}`, "error");
+        }
+      });
+      deviceListBody.appendChild(item);
+    });
+  } catch (e) {
+    deviceListBody.innerHTML = `<div class="modal-empty">Scan failed: ${e}</div>`;
+    addLog(`Scan failed: ${e}`, "error");
+  }
+});
+
+modalCloseBtn.addEventListener("click", () => {
+  deviceModal.classList.remove("active");
+});
+
+deviceModal.addEventListener("click", (e) => {
+  if (e.target === deviceModal) deviceModal.classList.remove("active");
 });
 
 // Settings - OSC
@@ -253,10 +277,10 @@ async function loadOscParams() {
 }
 
 function updateUI() {
-  connectBtn.textContent = isConnected ? "Disconnect" : "Connect";
-  connectBtn.classList.toggle("connected", isConnected);
-  scanBtn.disabled = isConnected;
-  deviceList.disabled = isConnected;
+  scanConnectBtn.textContent = isConnected ? "Disconnect" : "Scan & Connect";
+  scanConnectBtn.classList.toggle("btn-primary", !isConnected);
+  scanConnectBtn.classList.toggle("btn-connect", isConnected);
+  scanConnectBtn.classList.toggle("connected", isConnected);
 }
 
 loadOscParams();

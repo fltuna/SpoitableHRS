@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="titlebar" data-tauri-drag-region>
-    <span class="titlebar-title" data-tauri-drag-region>SpoitableHRS</span>
+  <div class="titlebar" id="titlebar">
+    <span class="titlebar-title">SpoitableHRS</span>
     <div class="titlebar-buttons">
       <button class="titlebar-btn" id="minimizeBtn">&#x2013;</button>
       <button class="titlebar-btn titlebar-close" id="closeBtn">&#x2715;</button>
@@ -36,13 +36,21 @@
 
       <div class="controls">
         <div class="section">
-          <button id="scanBtn" class="btn btn-primary">Scan Devices</button>
-          <select id="deviceList" class="select" disabled>
-            <option value="">-- Select Device --</option>
-          </select>
-          <button id="connectBtn" class="btn btn-connect" disabled>Connect</button>
+          <button id="scanConnectBtn" class="btn btn-primary">Scan &amp; Connect</button>
         </div>
       </div>
+
+    <div class="modal-overlay" id="deviceModal">
+      <div class="modal">
+        <div class="modal-header">
+          <span>Select Device</span>
+          <button class="modal-close" id="modalCloseBtn">&#x2715;</button>
+        </div>
+        <div class="modal-body" id="deviceListBody">
+          <div class="modal-scanning">Scanning...</div>
+        </div>
+      </div>
+    </div>
     </div>
 
     <div class="tab-content" id="tab-osc">
