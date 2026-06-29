@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub ws_port: u16,
     pub always_on_top: bool,
     pub start_minimized: bool,
+    pub language: String,
 }
 
 impl Default for AppConfig {
@@ -24,8 +25,36 @@ impl Default for AppConfig {
             ws_port: 9100,
             always_on_top: false,
             start_minimized: false,
+            language: detect_os_language(),
         }
     }
+}
+
+fn detect_os_language() -> String {
+    let lang = std::env::var("LANG")
+        .or_else(|_| std::env::var("LC_ALL"))
+        .or_else(|_| std::env::var("LANGUAGE"))
+        .unwrap_or_default();
+
+    if lang.starts_with("ja") {
+        return "ja".to_string();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        if let Ok(out) = Command::new("powershell")
+            .args(["-NoProfile", "-Command", "(Get-Culture).TwoLetterISOLanguageName"])
+            .output()
+        {
+            let code = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if code == "ja" {
+                return "ja".to_string();
+            }
+        }
+    }
+
+    "en".to_string()
 }
 
 fn config_path() -> PathBuf {

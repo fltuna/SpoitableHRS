@@ -1,6 +1,24 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// ── i18n ──
+let lang = {};
+let currentLang = "en";
+
+async function loadLang(code) {
+  const resp = await fetch(`lang/${code}.json`);
+  lang = await resp.json();
+  currentLang = code;
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.dataset.i18n;
+    if (lang[key]) el.textContent = lang[key];
+  });
+}
+
+function t(key) {
+  return lang[key] || key;
+}
+
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 document.addEventListener("keydown", (e) => { if (e.key === "F12") e.preventDefault(); });
 
@@ -101,10 +119,10 @@ function drawGraph() {
 
 // ── HR Zones ──
 function getZone(hr) {
-  if (hr >= 140) return { name: "Hard", color: "#e74c3c" };
-  if (hr >= 120) return { name: "Moderate", color: "#f39c12" };
-  if (hr >= 100) return { name: "Light", color: "#3a86ff" };
-  return { name: "Rest Zone", color: "#2ecc71" };
+  if (hr >= 140) return { name: t("zone.hard"), color: "#e74c3c" };
+  if (hr >= 120) return { name: t("zone.moderate"), color: "#f39c12" };
+  if (hr >= 100) return { name: t("zone.light"), color: "#3a86ff" };
+  return { name: t("zone.rest"), color: "#2ecc71" };
 }
 
 // ── Status ──
@@ -122,7 +140,7 @@ function updateConnectionUI() {
     monitorConnected.classList.remove("hidden");
     monitorDisconnected.classList.add("hidden");
     heartEl.classList.add("beating");
-    setStatus("connected", "Connected", "#2ecc71");
+    setStatus("connected", t("status.connected"), "#2ecc71");
     if (connectedDevice) {
       document.getElementById("connectedDeviceName").textContent = connectedDevice.name;
       document.getElementById("connectedDeviceId").textContent = "";
@@ -136,7 +154,7 @@ function updateConnectionUI() {
     scanCircle.classList.remove("hidden");
     scanSpinner.classList.add("hidden");
     scanLabel.textContent = "";
-    setStatus("disconnected", "Disconnected", "#e74c3c");
+    setStatus("disconnected", t("status.disconnected"), "#e74c3c");
     bpmEl.textContent = "";
     hrZoneEl.textContent = "";
     hrHistory.length = 0;
@@ -158,9 +176,9 @@ statusIndicator.addEventListener("click", async () => {
 scanCircle.addEventListener("click", async () => {
   scanCircle.classList.add("hidden");
   scanSpinner.classList.remove("hidden");
-  scanLabel.textContent = "Searching for devices...";
+  scanLabel.textContent = t("monitor.scanning");
   scanLabel.style.color = "#999";
-  setStatus("searching", "Searching...", "#3a86ff");
+  setStatus("searching", t("status.searching"), "#3a86ff");
   addLog("Starting BLE scan...");
 
   try {
@@ -171,9 +189,9 @@ scanCircle.addEventListener("click", async () => {
     if (devices.length === 0) {
       scanSpinner.classList.add("hidden");
       scanCircle.classList.remove("hidden");
-      scanLabel.textContent = "No devices found";
+      scanLabel.textContent = t("monitor.noDevices");
       scanLabel.style.color = "#e74c3c";
-      setStatus("disconnected", "Disconnected", "#e74c3c");
+      setStatus("disconnected", t("status.disconnected"), "#e74c3c");
       addLog("No devices found", "warn");
       return;
     }
@@ -181,7 +199,7 @@ scanCircle.addEventListener("click", async () => {
     // Show modal
     scanSpinner.classList.add("hidden");
     scanLabel.textContent = "";
-    setStatus("disconnected", "Device Found", "#3a86ff");
+    setStatus("disconnected", t("status.deviceFound"), "#3a86ff");
     deviceModal.classList.add("active");
     deviceListBody.innerHTML = "";
 
@@ -199,7 +217,7 @@ scanCircle.addEventListener("click", async () => {
     scanSpinner.classList.add("hidden");
     scanCircle.classList.remove("hidden");
     scanLabel.textContent = "";
-    setStatus("disconnected", "Disconnected", "#e74c3c");
+    setStatus("disconnected", t("status.disconnected"), "#e74c3c");
     addLog(`Scan failed: ${e}`, "error");
   }
 });
@@ -210,8 +228,8 @@ async function connectToDevice(device) {
 
   scanCircle.classList.add("hidden");
   scanSpinner.classList.remove("hidden");
-  scanLabel.textContent = "Establishing connection...";
-  setStatus("connecting", "Connecting...", "#3a86ff");
+  scanLabel.textContent = t("monitor.connecting");
+  setStatus("connecting", t("status.connecting"), "#3a86ff");
   addLog(`Connecting to ${device.id}...`);
 
   try {
@@ -220,7 +238,7 @@ async function connectToDevice(device) {
     scanSpinner.classList.add("hidden");
     scanCircle.classList.remove("hidden");
     scanLabel.textContent = "";
-    setStatus("disconnected", "Disconnected", "#e74c3c");
+    setStatus("disconnected", t("status.disconnected"), "#e74c3c");
     addLog(`Connection failed: ${e}`, "error");
   }
 }
@@ -229,13 +247,13 @@ async function connectToDevice(device) {
 modalCloseBtn.addEventListener("click", () => {
   deviceModal.classList.remove("active");
   scanCircle.classList.remove("hidden");
-  setStatus("disconnected", "Disconnected", "#e74c3c");
+  setStatus("disconnected", t("status.disconnected"), "#e74c3c");
 });
 deviceModal.addEventListener("click", (e) => {
   if (e.target === deviceModal) {
     deviceModal.classList.remove("active");
     scanCircle.classList.remove("hidden");
-    setStatus("disconnected", "Disconnected", "#e74c3c");
+    setStatus("disconnected", t("status.disconnected"), "#e74c3c");
   }
 });
 
@@ -364,6 +382,13 @@ document.getElementById("startMinToggle").addEventListener("click", () => {
   addLog(`Start minimized: ${enabled ? "on" : "off"}`);
 });
 
+document.getElementById("langSelect").addEventListener("change", (e) => {
+  const code = e.target.value;
+  loadLang(code);
+  invoke("set_language", { language: code });
+  addLog(`Language: ${code}`);
+});
+
 // ── Log ──
 function addLog(message, level = "info") {
   const entry = document.createElement("div");
@@ -481,6 +506,10 @@ async function loadAllSettings() {
 
   const sm = await invoke("get_start_minimized");
   document.getElementById("startMinToggle").dataset.checked = sm.toString();
+
+  const savedLang = await invoke("get_language");
+  document.getElementById("langSelect").value = savedLang;
+  await loadLang(savedLang);
 
   renderOverlayList();
 }

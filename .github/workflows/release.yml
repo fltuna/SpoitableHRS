@@ -26,6 +26,16 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
       - name: Install frontend dependencies
         run: pnpm install
 
@@ -40,26 +50,29 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
-      - name: Find build artifacts
+      - name: Find and read artifacts
         id: artifacts
-        shell: bash
+        shell: pwsh
         run: |
-          NSIS_ZIP=$(find src-tauri/target/release/bundle/nsis -name "*.nsis.zip" | head -1)
-          NSIS_SIG=$(find src-tauri/target/release/bundle/nsis -name "*.nsis.zip.sig" | head -1)
-          NSIS_EXE=$(find src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
-          echo "nsis_zip=$NSIS_ZIP" >> $GITHUB_OUTPUT
-          echo "nsis_sig=$NSIS_SIG" >> $GITHUB_OUTPUT
-          echo "nsis_exe=$NSIS_EXE" >> $GITHUB_OUTPUT
+          $version = "${{ steps.version.outputs.version }}"
+          $bundleDir = "src-tauri/target/release/bundle/nsis"
 
-      - name: Read signature
-        id: signature
-        shell: bash
-        run: |
-          SIG=$(cat "${{ steps.artifacts.outputs.nsis_sig }}")
-          echo "sig=$SIG" >> $GITHUB_OUTPUT
+          $nsisZip = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip.sig" | Select-Object -First 1
+          $nsisExe = Get-ChildItem -Path $bundleDir -Filter "*.exe" | Select-Object -First 1
+
+          Write-Output "nsis_zip=$($nsisZip.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Output "nsis_sig=$($nsisSig.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Output "nsis_exe=$($nsisExe.FullName)" >> $env:GITHUB_OUTPUT
+
+          $sig = Get-Content $nsisSig.FullName -Raw
+          Write-Output "sig=$sig" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Found zip: $($nsisZip.Name)"
+          Write-Host "Found sig: $($nsisSig.Name)"
+          Write-Host "Found exe: $($nsisExe.Name)"
 
       - name: Create GitHub Release
-        id: release
         uses: softprops/action-gh-release@v2
         with:
           name: SpoitableHRS v${{ steps.version.outputs.version }}
@@ -76,7 +89,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          SIG="${{ steps.signature.outputs.sig }}"
+          SIG="${{ steps.artifacts.outputs.sig }}"
           DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/SpoitableHRS_${VERSION}_x64-setup.nsis.zip"
 
           npx wrangler kv:key put \

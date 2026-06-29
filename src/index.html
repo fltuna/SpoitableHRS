@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -8,31 +8,25 @@
 </head>
 <body>
   <div class="app">
-    <!-- Top blur backdrop -->
     <div class="top-backdrop"></div>
 
-    <!-- App title (center) -->
     <div class="app-title">
       <div class="title-line"></div>
       <span>SpoitableHRS</span>
       <div class="title-line"></div>
     </div>
 
-    <!-- Status indicator (top-left) -->
     <div class="status-indicator" id="statusIndicator">
       <div class="status-dot"></div>
-      <span class="status-label">Disconnected</span>
+      <span class="status-label" data-i18n="status.disconnected">Disconnected</span>
     </div>
 
-    <!-- Window controls (top-right) -->
     <div class="win-controls" id="titlebar">
       <button class="win-btn" id="minimizeBtn">&#x2013;</button>
       <button class="win-btn win-close" id="closeBtn">&#x2715;</button>
     </div>
 
-    <!-- Content area -->
     <div class="content">
-      <!-- Monitor: Connected -->
       <div class="view active" id="view-monitor">
         <div class="monitor-connected hidden" id="monitorConnected">
           <div class="monitor-center">
@@ -68,16 +62,16 @@
       <div class="view" id="view-osc">
         <div class="scroll-area">
           <div class="s-section">
-            <div class="s-header">OSC Output</div>
+            <div class="s-header" data-i18n="osc.header">OSC Output</div>
             <div class="toggle-row">
               <div class="toggle-switch" id="oscToggle" data-checked="true"><div class="toggle-thumb"></div></div>
-              <span>Enable</span>
+              <span data-i18n="osc.enable">Enable</span>
             </div>
             <div class="s-row"><span class="s-label">IP</span><input type="text" id="oscIp" value="127.0.0.1" class="s-input" /></div>
             <div class="s-row"><span class="s-label">Port</span><input type="number" id="oscPort" value="9000" class="s-input s-input-short" /></div>
           </div>
           <div class="s-section">
-            <div class="s-header">Parameter Names</div>
+            <div class="s-header" data-i18n="osc.paramHeader">Parameter Names</div>
             <div class="s-row"><span class="s-label mono">HR</span><input type="text" id="param-hr" value="HR" class="s-input" /></div>
             <div class="s-row"><span class="s-label mono">onesHR</span><input type="text" id="param-ones_hr" value="onesHR" class="s-input" /></div>
             <div class="s-row"><span class="s-label mono">tensHR</span><input type="text" id="param-tens_hr" value="tensHR" class="s-input" /></div>
@@ -87,7 +81,7 @@
             <div class="s-row"><span class="s-label mono">isHRBeat</span><input type="text" id="param-is_hr_beat" value="isHRBeat" class="s-input" /></div>
             <div class="s-row"><span class="s-label mono">HRPercent</span><input type="text" id="param-hr_percent" value="HRPercent" class="s-input" /></div>
             <div class="s-row"><span class="s-label mono">FullHRPercent</span><input type="text" id="param-full_hr_percent" value="FullHRPercent" class="s-input" /></div>
-            <button id="saveParamsBtn" class="s-btn">Save Parameters</button>
+            <button id="saveParamsBtn" class="s-btn" data-i18n="osc.saveParams">Save Parameters</button>
           </div>
         </div>
       </div>
@@ -96,20 +90,20 @@
       <div class="view" id="view-overlay">
         <div class="scroll-area">
           <div class="s-section">
-            <div class="s-header">WebSocket Server</div>
+            <div class="s-header" data-i18n="overlay.wsHeader">WebSocket Server</div>
             <div class="toggle-row">
               <div class="toggle-switch" id="wsToggle" data-checked="true"><div class="toggle-thumb"></div></div>
-              <span>Enable</span>
+              <span data-i18n="overlay.enable">Enable</span>
             </div>
             <div class="s-row"><span class="s-label">Port</span><input type="number" id="wsPort" value="9100" class="s-input s-input-short" /></div>
           </div>
           <div class="s-section">
-            <div class="s-header">Templates</div>
+            <div class="s-header" data-i18n="overlay.templates">Templates</div>
             <div class="overlay-list" id="overlayList"></div>
           </div>
           <div class="overlay-help">
-            <b>URL</b> — Paste into OBS Browser Source<br>
-            <b>HTML</b> — Copy full HTML for customization
+            <b>URL</b> — <span data-i18n="overlay.helpUrl">Paste into OBS Browser Source</span><br>
+            <b>HTML</b> — <span data-i18n="overlay.helpHtml">Copy full HTML for customization</span>
           </div>
         </div>
       </div>
@@ -118,22 +112,28 @@
       <div class="view" id="view-settings">
         <div class="scroll-area">
           <div class="s-section">
-            <div class="s-header">Heart Rate Zones</div>
-            <div class="zone-row"><div class="zone-dot" style="background:#2ecc71"></div><span class="zone-name">Rest</span><span class="zone-range">&lt; 100 BPM</span></div>
-            <div class="zone-row"><div class="zone-dot" style="background:#3a86ff"></div><span class="zone-name">Light</span><span class="zone-range">100 – 120 BPM</span></div>
-            <div class="zone-row"><div class="zone-dot" style="background:#f39c12"></div><span class="zone-name">Moderate</span><span class="zone-range">120 – 140 BPM</span></div>
-            <div class="zone-row"><div class="zone-dot" style="background:#e74c3c"></div><span class="zone-name">Hard</span><span class="zone-range">140+ BPM</span></div>
+            <div class="s-header" data-i18n="settings.zonesHeader">Heart Rate Zones</div>
+            <div class="zone-row"><div class="zone-dot" style="background:#2ecc71"></div><span class="zone-name" data-i18n="settings.zone.rest">Rest</span><span class="zone-range">&lt; 100 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#3a86ff"></div><span class="zone-name" data-i18n="settings.zone.light">Light</span><span class="zone-range">100 – 120 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#f39c12"></div><span class="zone-name" data-i18n="settings.zone.moderate">Moderate</span><span class="zone-range">120 – 140 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#e74c3c"></div><span class="zone-name" data-i18n="settings.zone.hard">Hard</span><span class="zone-range">140+ BPM</span></div>
           </div>
           <div class="s-section">
-            <div class="s-header">General</div>
-            <div class="s-row"><span class="s-label">Always on top</span><div class="toggle-switch" id="alwaysOnTopToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
-            <div class="s-row"><span class="s-label">Start minimized</span><div class="toggle-switch" id="startMinToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
+            <div class="s-header" data-i18n="settings.generalHeader">General</div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.alwaysOnTop">Always on top</span><div class="toggle-switch" id="alwaysOnTopToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.startMinimized">Start minimized</span><div class="toggle-switch" id="startMinToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.language">Language</span>
+              <select id="langSelect" class="s-input s-input-short">
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+              </select>
+            </div>
           </div>
           <div class="s-section">
-            <div class="s-header">About</div>
+            <div class="s-header" data-i18n="settings.aboutHeader">About</div>
             <div class="about-text">
               <div>SpoitableHRS <span class="about-version">v0.1.0</span></div>
-              <div>BLE Heart Rate Monitor for VRChat, OBS</div>
+              <div data-i18n="settings.aboutDesc">BLE Heart Rate Monitor for VRChat, OBS</div>
             </div>
           </div>
         </div>
@@ -155,18 +155,16 @@
     <div class="modal-overlay" id="deviceModal">
       <div class="modal">
         <div class="modal-header">
-          <span>Select Device</span>
+          <span data-i18n="modal.selectDevice">Select Device</span>
           <button class="modal-close" id="modalCloseBtn">&#x2715;</button>
         </div>
         <div class="modal-body" id="deviceListBody"></div>
       </div>
     </div>
 
-    <!-- Sidebar trigger -->
     <div class="sidebar-trigger" id="sidebarTrigger"></div>
     <div class="sidebar-hint" id="sidebarHint"></div>
 
-    <!-- Floating sidebar -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-icon active" data-view="monitor" data-label="Monitor">
         <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>

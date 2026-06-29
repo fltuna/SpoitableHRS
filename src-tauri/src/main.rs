@@ -23,6 +23,7 @@ pub struct AppState {
     pub ws_port: Arc<Mutex<u16>>,
     pub always_on_top: Arc<AtomicBool>,
     pub start_minimized: Arc<AtomicBool>,
+    pub language: Arc<Mutex<String>>,
 }
 
 fn save_config(state: &AppState) {
@@ -34,6 +35,7 @@ fn save_config(state: &AppState) {
         ws_port: *state.ws_port.lock().unwrap(),
         always_on_top: state.always_on_top.load(Ordering::Relaxed),
         start_minimized: state.start_minimized.load(Ordering::Relaxed),
+        language: state.language.lock().unwrap().clone(),
     };
     config::save(&cfg);
 }
@@ -193,6 +195,17 @@ fn get_start_minimized(state: State<'_, AppState>) -> bool {
     state.start_minimized.load(Ordering::Relaxed)
 }
 
+#[tauri::command]
+fn set_language(state: State<'_, AppState>, language: String) {
+    *state.language.lock().unwrap() = language;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_language(state: State<'_, AppState>) -> String {
+    state.language.lock().unwrap().clone()
+}
+
 fn main() {
     let cfg = config::load();
 
@@ -221,6 +234,7 @@ fn main() {
             ws_port: Arc::new(Mutex::new(cfg.ws_port)),
             always_on_top: Arc::new(AtomicBool::new(cfg.always_on_top)),
             start_minimized: Arc::new(AtomicBool::new(cfg.start_minimized)),
+            language: Arc::new(Mutex::new(cfg.language)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -242,6 +256,8 @@ fn main() {
             get_always_on_top,
             set_start_minimized,
             get_start_minimized,
+            set_language,
+            get_language,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

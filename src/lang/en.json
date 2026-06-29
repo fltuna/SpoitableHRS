@@ -1,0 +1,43 @@
+{
+  "status.disconnected": "Disconnected",
+  "status.searching": "Searching...",
+  "status.deviceFound": "Device Found",
+  "status.connecting": "Connecting...",
+  "status.connected": "Connected",
+  "status.disconnect": "Disconnect",
+
+  "monitor.scanning": "Searching for devices...",
+  "monitor.connecting": "Establishing connection...",
+  "monitor.noDevices": "No devices found",
+
+  "modal.selectDevice": "Select Device",
+
+  "osc.header": "OSC Output",
+  "osc.enable": "Enable",
+  "osc.paramHeader": "Parameter Names",
+  "osc.saveParams": "Save Parameters",
+
+  "overlay.wsHeader": "WebSocket Server",
+  "overlay.enable": "Enable",
+  "overlay.templates": "Templates",
+  "overlay.helpUrl": "URL — Paste into OBS Browser Source",
+  "overlay.helpHtml": "HTML — Copy full HTML for customization",
+  "overlay.copied": "Copied!",
+
+  "settings.zonesHeader": "Heart Rate Zones",
+  "settings.zone.rest": "Rest",
+  "settings.zone.light": "Light",
+  "settings.zone.moderate": "Moderate",
+  "settings.zone.hard": "Hard",
+  "settings.generalHeader": "General",
+  "settings.alwaysOnTop": "Always on top",
+  "settings.startMinimized": "Start minimized",
+  "settings.language": "Language",
+  "settings.aboutHeader": "About",
+  "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
+
+  "zone.rest": "Rest Zone",
+  "zone.light": "Light Zone",
+  "zone.moderate": "Moderate Zone",
+  "zone.hard": "Hard Zone"
+}

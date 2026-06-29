@@ -1,0 +1,43 @@
+{
+  "status.disconnected": "未接続",
+  "status.searching": "検索中...",
+  "status.deviceFound": "デバイス検出",
+  "status.connecting": "接続中...",
+  "status.connected": "接続済み",
+  "status.disconnect": "切断",
+
+  "monitor.scanning": "デバイスを検索中...",
+  "monitor.connecting": "接続を確立中...",
+  "monitor.noDevices": "デバイスが見つかりません",
+
+  "modal.selectDevice": "デバイスを選択",
+
+  "osc.header": "OSC出力",
+  "osc.enable": "有効",
+  "osc.paramHeader": "パラメータ名",
+  "osc.saveParams": "パラメータを保存",
+
+  "overlay.wsHeader": "WebSocketサーバー",
+  "overlay.enable": "有効",
+  "overlay.templates": "テンプレート",
+  "overlay.helpUrl": "URL — OBSブラウザソースに貼り付け",
+  "overlay.helpHtml": "HTML — カスタマイズ用HTMLをコピー",
+  "overlay.copied": "コピー済み!",
+
+  "settings.zonesHeader": "心拍ゾーン",
+  "settings.zone.rest": "安静",
+  "settings.zone.light": "軽度",
+  "settings.zone.moderate": "中度",
+  "settings.zone.hard": "高強度",
+  "settings.generalHeader": "一般",
+  "settings.alwaysOnTop": "常に最前面",
+  "settings.startMinimized": "最小化で起動",
+  "settings.language": "言語",
+  "settings.aboutHeader": "このアプリについて",
+  "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
+
+  "zone.rest": "安静ゾーン",
+  "zone.light": "軽度ゾーン",
+  "zone.moderate": "中度ゾーン",
+  "zone.hard": "高強度ゾーン"
+}
