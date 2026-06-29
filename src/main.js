@@ -488,3 +488,23 @@ async function loadAllSettings() {
 loadAllSettings();
 updateConnectionUI();
 addLog("SpoitableHRS initialized");
+
+// ── Auto-update check ──
+async function checkForUpdates() {
+  try {
+    const { check } = window.__TAURI__.updater || {};
+    if (!check) return;
+    const update = await check();
+    if (update?.available) {
+      addLog(`Update available: v${update.version}`, "info");
+      addLog("Downloading update...", "info");
+      await update.downloadAndInstall();
+      addLog("Update installed. Restarting...", "info");
+      const { relaunch } = window.__TAURI__.process || {};
+      if (relaunch) await relaunch();
+    }
+  } catch (e) {
+    // Silently ignore update errors in dev mode
+  }
+}
+checkForUpdates();

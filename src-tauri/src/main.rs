@@ -206,6 +206,7 @@ fn main() {
     });
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState {
             heart_rate: Arc::new(Mutex::new(0)),
             connected: Arc::new(Mutex::new(false)),

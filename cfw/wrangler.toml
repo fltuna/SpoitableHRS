@@ -1,0 +1,14 @@
+name = "spoitable-hrs-updater"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "spoitable.update.f2a.dev", custom_domain = true }
+]
+
+[vars]
+CURRENT_VERSION = "0.1.0"
+
+[[kv_namespaces]]
+binding = "UPDATES"
+id = "44b426708e1f42b1aac00e082ec40de5"

@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Find build artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          NSIS_ZIP=$(find src-tauri/target/release/bundle/nsis -name "*.nsis.zip" | head -1)
+          NSIS_SIG=$(find src-tauri/target/release/bundle/nsis -name "*.nsis.zip.sig" | head -1)
+          NSIS_EXE=$(find src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
+          echo "nsis_zip=$NSIS_ZIP" >> $GITHUB_OUTPUT
+          echo "nsis_sig=$NSIS_SIG" >> $GITHUB_OUTPUT
+          echo "nsis_exe=$NSIS_EXE" >> $GITHUB_OUTPUT
+
+      - name: Read signature
+        id: signature
+        shell: bash
+        run: |
+          SIG=$(cat "${{ steps.artifacts.outputs.nsis_sig }}")
+          echo "sig=$SIG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SpoitableHRS v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.artifacts.outputs.nsis_zip }}
+            ${{ steps.artifacts.outputs.nsis_sig }}
+            ${{ steps.artifacts.outputs.nsis_exe }}
+
+      - name: Update CFW KV with latest version
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          SIG="${{ steps.signature.outputs.sig }}"
+          DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/SpoitableHRS_${VERSION}_x64-setup.nsis.zip"
+
+          npx wrangler kv:key put \
+            --namespace-id 44b426708e1f42b1aac00e082ec40de5 \
+            "latest" \
+            "{\"version\":\"${VERSION}\",\"notes\":\"Release v${VERSION}\",\"pub_date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"platforms\":{\"windows-x86_64\":{\"url\":\"${DOWNLOAD_URL}\",\"signature\":\"${SIG}\"}}}"
