@@ -393,9 +393,15 @@ document.getElementById("startMinToggle").addEventListener("click", () => {
   addLog(`Start minimized: ${enabled ? "on" : "off"}`);
 });
 
-document.getElementById("langSelect").addEventListener("change", (e) => {
+document.getElementById("langSelect").addEventListener("change", async (e) => {
   const code = e.target.value;
-  loadLang(code);
+  await loadLang(code);
+  updateBtnText();
+  if (isConnected) {
+    setStatus("connected", t("status.connected"), "#2ecc71");
+  } else {
+    setStatus("disconnected", t("status.disconnected"), "#e74c3c");
+  }
   invoke("set_language", { language: code });
   addLog(`Language: ${code}`);
 });
@@ -536,32 +542,67 @@ addLog("SpoitableHRS initialized");
 
 // ── Update check (manual) ──
 let pendingUpdate = null;
+let updateState = "idle"; // idle | checking | available | uptodate | updating | failed
+
+function updateBtnText() {
+  const btn = document.getElementById("updateBtn");
+  switch (updateState) {
+    case "checking":
+      btn.textContent = t("settings.checkingUpdate");
+      btn.disabled = true;
+      btn.classList.remove("update-ready");
+      break;
+    case "available":
+      btn.textContent = `${t("settings.updateAvailable")}: v${pendingUpdate?.version}`;
+      btn.disabled = false;
+      btn.classList.add("update-ready");
+      break;
+    case "uptodate":
+      btn.textContent = t("settings.upToDate");
+      btn.disabled = true;
+      btn.classList.remove("update-ready");
+      break;
+    case "updating":
+      btn.textContent = t("settings.updating");
+      btn.disabled = true;
+      btn.classList.remove("update-ready");
+      break;
+    case "failed":
+      btn.textContent = t("settings.updateFailed");
+      btn.disabled = false;
+      btn.classList.remove("update-ready");
+      break;
+    default:
+      btn.textContent = "";
+      btn.disabled = true;
+      break;
+  }
+}
 
 async function checkForUpdates() {
   try {
     const { check } = window.__TAURI__.updater || {};
     if (!check) return;
+    updateState = "checking";
+    updateBtnText();
     const update = await check();
-    const btn = document.getElementById("updateBtn");
     if (update?.available) {
       pendingUpdate = update;
+      updateState = "available";
       addLog(`Update available: v${update.version}`, "info");
-      btn.textContent = `${t("settings.updateAvailable") || "Update available"}: v${update.version}`;
-      btn.disabled = false;
-      btn.classList.add("update-ready");
     } else {
-      btn.textContent = t("settings.upToDate") || "Up to date";
+      updateState = "uptodate";
     }
   } catch (e) {
-    // Silently ignore update errors in dev mode
+    updateState = "idle";
   }
+  updateBtnText();
 }
 
 document.getElementById("updateBtn").addEventListener("click", async () => {
   if (!pendingUpdate) return;
-  const btn = document.getElementById("updateBtn");
-  btn.textContent = t("settings.updating") || "Updating...";
-  btn.disabled = true;
+  updateState = "updating";
+  updateBtnText();
   addLog("Downloading update...", "info");
   try {
     await pendingUpdate.downloadAndInstall();
@@ -570,8 +611,8 @@ document.getElementById("updateBtn").addEventListener("click", async () => {
     if (relaunch) await relaunch();
   } catch (e) {
     addLog(`Update failed: ${e}`, "error");
-    btn.textContent = t("settings.updateFailed") || "Update failed";
-    btn.disabled = false;
+    updateState = "failed";
+    updateBtnText();
   }
 });
 
