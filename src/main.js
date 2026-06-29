@@ -584,15 +584,17 @@ async function checkForUpdates() {
     updateState = "checking";
     updateBtnText();
     const result = await invoke("plugin:updater|check");
+    addLog(`Latest version from updater: v${result?.version || "unknown"}`, "info");
     if (result && result.available) {
       pendingUpdate = result;
       updateState = "available";
       addLog(`Update available: v${result.version}`, "info");
     } else {
       updateState = "uptodate";
+      addLog("No updates available", "info");
     }
   } catch (e) {
-    addLog(`Update check: ${e}`, "warn");
+    addLog(`Update check failed: ${e}`, "warn");
     updateState = "idle";
   }
   updateBtnText();
