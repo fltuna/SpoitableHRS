@@ -6,8 +6,6 @@ const heartEl = document.getElementById("heart");
 const scanBtn = document.getElementById("scanBtn");
 const deviceList = document.getElementById("deviceList");
 const connectBtn = document.getElementById("connectBtn");
-const oscToggle = document.getElementById("oscToggle");
-const oscPort = document.getElementById("oscPort");
 const statusEl = document.getElementById("status");
 const logContainer = document.getElementById("logContainer");
 const clearLogBtn = document.getElementById("clearLogBtn");
@@ -199,6 +197,17 @@ connectBtn.addEventListener("click", async () => {
   }
 });
 
+// Settings - OSC
+const oscToggle = document.getElementById("oscToggle");
+const oscPort = document.getElementById("oscPort");
+const saveParamsBtn = document.getElementById("saveParamsBtn");
+
+const PARAM_FIELDS = [
+  "hr", "ones_hr", "tens_hr", "hundreds_hr",
+  "is_hr_connected", "is_hr_active", "is_hr_beat",
+  "hr_percent", "full_hr_percent",
+];
+
 oscToggle.addEventListener("change", () => {
   invoke("set_osc_enabled", { enabled: oscToggle.checked });
   addLog(`OSC output ${oscToggle.checked ? "enabled" : "disabled"}`);
@@ -212,6 +221,30 @@ oscPort.addEventListener("change", () => {
   }
 });
 
+saveParamsBtn.addEventListener("click", async () => {
+  const params = {};
+  for (const field of PARAM_FIELDS) {
+    params[field] = document.getElementById(`param-${field}`).value;
+  }
+  await invoke("set_osc_params", { params });
+  addLog("OSC parameter names saved");
+  statusEl.textContent = "Parameters saved";
+});
+
+async function loadOscParams() {
+  try {
+    const params = await invoke("get_osc_params");
+    for (const field of PARAM_FIELDS) {
+      const el = document.getElementById(`param-${field}`);
+      if (el && params[field] !== undefined) {
+        el.value = params[field];
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load OSC params:", e);
+  }
+}
+
 function updateUI() {
   connectBtn.textContent = isConnected ? "Disconnect" : "Connect";
   connectBtn.classList.toggle("connected", isConnected);
@@ -219,4 +252,5 @@ function updateUI() {
   deviceList.disabled = isConnected;
 }
 
+loadOscParams();
 addLog("SpoitableHRS initialized");

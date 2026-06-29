@@ -12,8 +12,10 @@ pub struct AppState {
     pub connected: Arc<Mutex<bool>>,
     pub osc_enabled: Arc<Mutex<bool>>,
     pub osc_port: Arc<Mutex<u16>>,
+    pub osc_params: Arc<Mutex<osc::OscParamNames>>,
     pub ble_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub stop_flag: Arc<AtomicBool>,
+    pub beat_toggle: Arc<AtomicBool>,
 }
 
 #[tauri::command]
@@ -39,11 +41,14 @@ async fn connect_device(
     let connected = state.connected.clone();
     let osc_enabled = state.osc_enabled.clone();
     let osc_port = state.osc_port.clone();
+    let osc_params = state.osc_params.clone();
     let stop = state.stop_flag.clone();
+    let beat_toggle = state.beat_toggle.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = ble::connect_and_subscribe(
-            &device_id, hr, connected, osc_enabled, osc_port, app.clone(), stop,
+            &device_id, hr, connected, osc_enabled, osc_port, osc_params, beat_toggle,
+            app.clone(), stop,
         )
         .await
         {
@@ -96,6 +101,16 @@ fn get_osc_enabled(state: State<'_, AppState>) -> bool {
     *state.osc_enabled.lock().unwrap()
 }
 
+#[tauri::command]
+fn get_osc_params(state: State<'_, AppState>) -> osc::OscParamNames {
+    state.osc_params.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_osc_params(state: State<'_, AppState>, params: osc::OscParamNames) {
+    *state.osc_params.lock().unwrap() = params;
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AppState {
@@ -103,8 +118,10 @@ fn main() {
             connected: Arc::new(Mutex::new(false)),
             osc_enabled: Arc::new(Mutex::new(true)),
             osc_port: Arc::new(Mutex::new(9000)),
+            osc_params: Arc::new(Mutex::new(osc::OscParamNames::default())),
             ble_handle: Arc::new(Mutex::new(None)),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            beat_toggle: Arc::new(AtomicBool::new(false)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -116,6 +133,8 @@ fn main() {
             set_osc_port,
             get_osc_port,
             get_osc_enabled,
+            get_osc_params,
+            set_osc_params,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

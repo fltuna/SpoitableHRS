@@ -10,6 +10,7 @@
   <div class="container">
     <div class="tabs">
       <button class="tab active" data-tab="main">Monitor</button>
+      <button class="tab" data-tab="settings">Settings</button>
       <button class="tab" data-tab="log">Log</button>
     </div>
 
@@ -32,16 +33,66 @@
           </select>
           <button id="connectBtn" class="btn btn-connect" disabled>Connect</button>
         </div>
+      </div>
+    </div>
 
-        <div class="section osc-settings">
+    <div class="tab-content" id="tab-settings">
+      <div class="settings-scroll">
+        <div class="settings-section">
+          <div class="settings-header">OSC</div>
           <label class="toggle">
             <input type="checkbox" id="oscToggle" checked />
             <span>OSC Output</span>
           </label>
-          <div class="port-input">
-            <label for="oscPort">Port:</label>
-            <input type="number" id="oscPort" value="9000" min="1" max="65535" />
+          <div class="setting-row">
+            <label>IP</label>
+            <input type="text" id="oscIp" value="127.0.0.1" class="setting-input" />
           </div>
+          <div class="setting-row">
+            <label>Port</label>
+            <input type="number" id="oscPort" value="9000" min="1" max="65535" class="setting-input setting-input-short" />
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-header">OSC Parameter Names</div>
+          <div class="setting-row">
+            <label>HR</label>
+            <input type="text" id="param-hr" value="HR" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>onesHR</label>
+            <input type="text" id="param-ones_hr" value="onesHR" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>tensHR</label>
+            <input type="text" id="param-tens_hr" value="tensHR" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>hundredsHR</label>
+            <input type="text" id="param-hundreds_hr" value="hundredsHR" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>isHRConnected</label>
+            <input type="text" id="param-is_hr_connected" value="isHRConnected" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>isHRActive</label>
+            <input type="text" id="param-is_hr_active" value="isHRActive" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>isHRBeat</label>
+            <input type="text" id="param-is_hr_beat" value="isHRBeat" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>HRPercent</label>
+            <input type="text" id="param-hr_percent" value="HRPercent" class="setting-input" />
+          </div>
+          <div class="setting-row">
+            <label>FullHRPercent</label>
+            <input type="text" id="param-full_hr_percent" value="FullHRPercent" class="setting-input" />
+          </div>
+          <button id="saveParamsBtn" class="btn btn-primary btn-full">Save Parameters</button>
         </div>
       </div>
     </div>

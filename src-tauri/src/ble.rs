@@ -141,6 +141,8 @@ pub async fn connect_and_subscribe(
     connected: Arc<Mutex<bool>>,
     osc_enabled: Arc<Mutex<bool>>,
     osc_port: Arc<Mutex<u16>>,
+    osc_params: Arc<Mutex<crate::osc::OscParamNames>>,
+    beat_toggle: Arc<AtomicBool>,
     app: tauri::AppHandle,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -237,7 +239,15 @@ pub async fn connect_and_subscribe(
 
         if *osc_enabled.lock().unwrap() {
             let port = *osc_port.lock().unwrap();
-            if let Err(e) = crate::osc::send_heart_rate(port, hr) {
+            let params = osc_params.lock().unwrap().clone();
+            let toggle = beat_toggle.fetch_xor(true, Ordering::Relaxed);
+            let state = crate::osc::HrState {
+                hr,
+                is_connected: true,
+                is_active: hr > 0,
+                beat_toggle: toggle,
+            };
+            if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
                 emit_log(&app, &format!("OSC send error: {e}"), "error");
             }
         }

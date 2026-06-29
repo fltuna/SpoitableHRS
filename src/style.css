@@ -270,6 +270,64 @@ body {
   color: #ff5555;
 }
 
+.settings-scroll {
+  width: 100%;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.settings-section {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #333;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.setting-row label {
+  font-size: 13px;
+  color: #bbb;
+  min-width: 100px;
+}
+
+.setting-input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #eee;
+  font-size: 13px;
+}
+
+.setting-input-short {
+  max-width: 80px;
+}
+
+.btn-full {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .status {
   margin-top: 8px;
   font-size: 12px;
