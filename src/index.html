@@ -7,9 +7,18 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div class="titlebar" data-tauri-drag-region>
+    <span class="titlebar-title" data-tauri-drag-region>SpoitableHRS</span>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn" id="minimizeBtn">&#x2013;</button>
+      <button class="titlebar-btn titlebar-close" id="closeBtn">&#x2715;</button>
+    </div>
+  </div>
+
   <div class="container">
     <div class="tabs">
       <button class="tab active" data-tab="main">Monitor</button>
+      <button class="tab" data-tab="osc">OSC</button>
       <button class="tab" data-tab="settings">Settings</button>
       <button class="tab" data-tab="log">Log</button>
     </div>
@@ -36,13 +45,13 @@
       </div>
     </div>
 
-    <div class="tab-content" id="tab-settings">
+    <div class="tab-content" id="tab-osc">
       <div class="settings-scroll">
         <div class="settings-section">
-          <div class="settings-header">OSC</div>
+          <div class="settings-header">OSC Output</div>
           <label class="toggle">
             <input type="checkbox" id="oscToggle" checked />
-            <span>OSC Output</span>
+            <span>Enable</span>
           </label>
           <div class="setting-row">
             <label>IP</label>
@@ -55,7 +64,7 @@
         </div>
 
         <div class="settings-section">
-          <div class="settings-header">OSC Parameter Names</div>
+          <div class="settings-header">Parameter Names</div>
           <div class="setting-row">
             <label>HR</label>
             <input type="text" id="param-hr" value="HR" class="setting-input" />
@@ -93,6 +102,15 @@
             <input type="text" id="param-full_hr_percent" value="FullHRPercent" class="setting-input" />
           </div>
           <button id="saveParamsBtn" class="btn btn-primary btn-full">Save Parameters</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-settings">
+      <div class="settings-scroll">
+        <div class="settings-section">
+          <div class="settings-header">General</div>
+          <p class="setting-placeholder">Coming soon...</p>
         </div>
       </div>
     </div>

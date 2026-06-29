@@ -13,11 +13,57 @@ body {
   user-select: none;
 }
 
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 4px 0 12px;
+  background: #12122a;
+  -webkit-app-region: drag;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  pointer-events: none;
+}
+
+.titlebar-buttons {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  width: 36px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.titlebar-btn:hover {
+  background: #2a2a4a;
+  color: #eee;
+}
+
+.titlebar-close:hover {
+  background: #e74c3c;
+  color: #fff;
+}
+
 .container {
   display: flex;
   flex-direction: column;
   padding: 0 20px 20px;
-  height: 100vh;
+  height: calc(100vh - 32px);
 }
 
 .tabs {
@@ -326,6 +372,11 @@ body {
 .btn-full {
   width: 100%;
   margin-top: 12px;
+}
+
+.setting-placeholder {
+  font-size: 13px;
+  color: #555;
 }
 
 .status {

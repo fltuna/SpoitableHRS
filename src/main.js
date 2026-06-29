@@ -1,6 +1,13 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+document.getElementById("minimizeBtn").addEventListener("click", () => {
+  invoke("plugin:window|minimize", { label: "main" });
+});
+document.getElementById("closeBtn").addEventListener("click", () => {
+  invoke("plugin:window|close", { label: "main" });
+});
+
 const bpmEl = document.getElementById("bpm");
 const heartEl = document.getElementById("heart");
 const scanBtn = document.getElementById("scanBtn");

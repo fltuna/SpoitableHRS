@@ -261,10 +261,10 @@ pub async fn connect_and_subscribe(
 }
 
 fn parse_polar_broadcast(data: &[u8]) -> Option<u16> {
-    // Polar Verity Sense broadcast format (13 bytes):
-    // [0]type [1-4]device info [5-9]zeros [10]?? [11]00 [12]HR
-    if data.len() > 12 {
-        let hr = data[12] as u16;
+    // Polar Verity Sense: HR is the last byte of manufacturer data
+    // Packet length varies (13, 16 bytes observed) but HR is always last
+    if data.len() >= 10 {
+        let hr = *data.last().unwrap() as u16;
         if hr >= 30 && hr <= 240 {
             return Some(hr);
         }
