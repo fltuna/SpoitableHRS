@@ -61,11 +61,18 @@ jobs:
           Get-ChildItem -Path $bundleDir -Recurse | ForEach-Object { Write-Host $_.FullName }
 
           $nsisExe = Get-ChildItem -Path $bundleDir -Filter "*.exe" | Select-Object -First 1
-          $nsisSig = Get-ChildItem -Path $bundleDir -Filter "*.sig" | Select-Object -First 1
+          $nsisZip = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip" | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path $bundleDir -Filter "*.nsis.zip.sig" | Select-Object -First 1
 
           if (-not $nsisExe) { Write-Error "No exe found"; exit 1 }
 
           Write-Output "nsis_exe=$($nsisExe.FullName)" >> $env:GITHUB_OUTPUT
+
+          if ($nsisZip) {
+            Write-Output "nsis_zip=$($nsisZip.FullName)" >> $env:GITHUB_OUTPUT
+            Write-Output "zip_name=$($nsisZip.Name)" >> $env:GITHUB_OUTPUT
+            Write-Host "Found zip: $($nsisZip.Name)"
+          }
 
           if ($nsisSig) {
             Write-Output "nsis_sig=$($nsisSig.FullName)" >> $env:GITHUB_OUTPUT
@@ -77,7 +84,6 @@ jobs:
             Write-Output "sig=" >> $env:GITHUB_OUTPUT
           }
 
-          Write-Output "exe_name=$($nsisExe.Name)" >> $env:GITHUB_OUTPUT
           Write-Host "Found exe: $($nsisExe.Name)"
 
       - name: Create GitHub Release
@@ -87,6 +93,7 @@ jobs:
           generate_release_notes: true
           files: |
             ${{ steps.artifacts.outputs.nsis_exe }}
+            ${{ steps.artifacts.outputs.nsis_zip }}
             ${{ steps.artifacts.outputs.nsis_sig }}
 
       - name: Update CFW KV with latest version
@@ -97,8 +104,8 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           SIG="${{ steps.artifacts.outputs.sig }}"
-          EXE_NAME="${{ steps.artifacts.outputs.exe_name }}"
-          DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/${EXE_NAME}"
+          ZIP_NAME="${{ steps.artifacts.outputs.zip_name }}"
+          DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/${ZIP_NAME}"
 
           npx wrangler kv key put \
             --namespace-id 44b426708e1f42b1aac00e082ec40de5 \
