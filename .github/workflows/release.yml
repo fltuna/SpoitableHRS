@@ -99,7 +99,7 @@ jobs:
           EXE_NAME="${{ steps.artifacts.outputs.exe_name }}"
           DOWNLOAD_URL="https://github.com/fltuna/SpoitableHRS/releases/download/v${VERSION}/${EXE_NAME}"
 
-          npx wrangler kv key put \
+          npx wrangler kv key put --remote \
             --namespace-id 44b426708e1f42b1aac00e082ec40de5 \
             "latest" \
             "{\"version\":\"${VERSION}\",\"notes\":\"Release v${VERSION}\",\"pub_date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"platforms\":{\"windows-x86_64\":{\"url\":\"${DOWNLOAD_URL}\",\"signature\":\"${SIG}\"}}}"
