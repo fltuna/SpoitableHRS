@@ -592,8 +592,10 @@ async function checkForUpdates() {
     updateBtnText();
     addLog("Checking for updates...", "info");
 
+    // Try Tauri updater plugin first
     try {
       const metadata = await invoke("plugin:updater|check", {});
+      addLog(`Tauri updater result: ${JSON.stringify(metadata)}`, "info");
       if (metadata && metadata.version) {
         addLog(`Update available: v${metadata.version}`, "info");
         pendingUpdate = metadata;
@@ -601,16 +603,12 @@ async function checkForUpdates() {
         updateState = "available";
         updateBtnText();
         return;
-      } else {
-        updateState = "uptodate";
-        addLog("No updates available", "info");
-        updateBtnText();
-        return;
       }
     } catch (e) {
       addLog(`Tauri updater: ${e}`, "info");
     }
 
+    // Fallback: reqwest via Rust
     const result = await invoke("check_update");
     if (result) {
       addLog(`Update available: v${result.version}`, "info");
