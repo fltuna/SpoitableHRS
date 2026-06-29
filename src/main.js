@@ -348,12 +348,20 @@ async function loadOscParams() {
   } catch (e) { console.error("Failed to load OSC params:", e); }
 }
 
-// ── Always on top ──
+// ── Settings toggles ──
 document.getElementById("alwaysOnTopToggle").addEventListener("click", () => {
   const toggle = document.getElementById("alwaysOnTopToggle");
   const enabled = toggle.dataset.checked === "true";
+  invoke("set_always_on_top", { enabled });
   invoke("plugin:window|set_always_on_top", { label: "main", value: enabled });
   addLog(`Always on top: ${enabled ? "on" : "off"}`);
+});
+
+document.getElementById("startMinToggle").addEventListener("click", () => {
+  const toggle = document.getElementById("startMinToggle");
+  const enabled = toggle.dataset.checked === "true";
+  invoke("set_start_minimized", { enabled });
+  addLog(`Start minimized: ${enabled ? "on" : "off"}`);
 });
 
 // ── Log ──
@@ -451,7 +459,32 @@ document.getElementById("wsPort").addEventListener("change", () => {
 
 renderOverlayList();
 
-// ── Init ──
-loadOscParams();
+// ── Init: load all saved settings ──
+async function loadAllSettings() {
+  await loadOscParams();
+
+  const oscEnabled = await invoke("get_osc_enabled");
+  oscToggle.dataset.checked = oscEnabled.toString();
+
+  const oscPortVal = await invoke("get_osc_port");
+  oscPort.value = oscPortVal;
+
+  const wsEnabled = await invoke("get_ws_enabled");
+  document.getElementById("wsToggle").dataset.checked = wsEnabled.toString();
+
+  const wsPortVal = await invoke("get_ws_port");
+  document.getElementById("wsPort").value = wsPortVal;
+
+  const aot = await invoke("get_always_on_top");
+  document.getElementById("alwaysOnTopToggle").dataset.checked = aot.toString();
+  if (aot) invoke("plugin:window|set_always_on_top", { label: "main", value: true });
+
+  const sm = await invoke("get_start_minimized");
+  document.getElementById("startMinToggle").dataset.checked = sm.toString();
+
+  renderOverlayList();
+}
+
+loadAllSettings();
 updateConnectionUI();
 addLog("SpoitableHRS initialized");

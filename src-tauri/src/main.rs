@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ble;
+mod config;
 mod osc;
 mod ws;
 
@@ -20,6 +21,21 @@ pub struct AppState {
     pub ws_broadcaster: Arc<ws::WsBroadcaster>,
     pub ws_enabled: Arc<AtomicBool>,
     pub ws_port: Arc<Mutex<u16>>,
+    pub always_on_top: Arc<AtomicBool>,
+    pub start_minimized: Arc<AtomicBool>,
+}
+
+fn save_config(state: &AppState) {
+    let cfg = config::AppConfig {
+        osc_enabled: *state.osc_enabled.lock().unwrap(),
+        osc_port: *state.osc_port.lock().unwrap(),
+        osc_params: state.osc_params.lock().unwrap().clone(),
+        ws_enabled: state.ws_enabled.load(Ordering::Relaxed),
+        ws_port: *state.ws_port.lock().unwrap(),
+        always_on_top: state.always_on_top.load(Ordering::Relaxed),
+        start_minimized: state.start_minimized.load(Ordering::Relaxed),
+    };
+    config::save(&cfg);
 }
 
 #[tauri::command]
@@ -103,11 +119,13 @@ fn is_connected(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 fn set_osc_enabled(state: State<'_, AppState>, enabled: bool) {
     *state.osc_enabled.lock().unwrap() = enabled;
+    save_config(&state);
 }
 
 #[tauri::command]
 fn set_osc_port(state: State<'_, AppState>, port: u16) {
     *state.osc_port.lock().unwrap() = port;
+    save_config(&state);
 }
 
 #[tauri::command]
@@ -128,11 +146,13 @@ fn get_osc_params(state: State<'_, AppState>) -> osc::OscParamNames {
 #[tauri::command]
 fn set_osc_params(state: State<'_, AppState>, params: osc::OscParamNames) {
     *state.osc_params.lock().unwrap() = params;
+    save_config(&state);
 }
 
 #[tauri::command]
 fn set_ws_enabled(state: State<'_, AppState>, enabled: bool) {
     state.ws_enabled.store(enabled, Ordering::Relaxed);
+    save_config(&state);
 }
 
 #[tauri::command]
@@ -143,6 +163,7 @@ fn get_ws_enabled(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 fn set_ws_port(state: State<'_, AppState>, port: u16) {
     *state.ws_port.lock().unwrap() = port;
+    save_config(&state);
 }
 
 #[tauri::command]
@@ -150,28 +171,55 @@ fn get_ws_port(state: State<'_, AppState>) -> u16 {
     *state.ws_port.lock().unwrap()
 }
 
+#[tauri::command]
+fn set_always_on_top(state: State<'_, AppState>, enabled: bool) {
+    state.always_on_top.store(enabled, Ordering::Relaxed);
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_always_on_top(state: State<'_, AppState>) -> bool {
+    state.always_on_top.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_start_minimized(state: State<'_, AppState>, enabled: bool) {
+    state.start_minimized.store(enabled, Ordering::Relaxed);
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_start_minimized(state: State<'_, AppState>) -> bool {
+    state.start_minimized.load(Ordering::Relaxed)
+}
+
 fn main() {
+    let cfg = config::load();
+
     let ws_broadcaster = Arc::new(ws::WsBroadcaster::new());
+    let ws_port = cfg.ws_port;
 
     let bc = ws_broadcaster.clone();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(ws::start_server(9100, bc));
+        rt.block_on(ws::start_server(ws_port, bc));
     });
 
     tauri::Builder::default()
         .manage(AppState {
             heart_rate: Arc::new(Mutex::new(0)),
             connected: Arc::new(Mutex::new(false)),
-            osc_enabled: Arc::new(Mutex::new(true)),
-            osc_port: Arc::new(Mutex::new(9000)),
-            osc_params: Arc::new(Mutex::new(osc::OscParamNames::default())),
+            osc_enabled: Arc::new(Mutex::new(cfg.osc_enabled)),
+            osc_port: Arc::new(Mutex::new(cfg.osc_port)),
+            osc_params: Arc::new(Mutex::new(cfg.osc_params)),
             ble_handle: Arc::new(Mutex::new(None)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             beat_toggle: Arc::new(AtomicBool::new(false)),
             ws_broadcaster,
-            ws_enabled: Arc::new(AtomicBool::new(true)),
-            ws_port: Arc::new(Mutex::new(9100)),
+            ws_enabled: Arc::new(AtomicBool::new(cfg.ws_enabled)),
+            ws_port: Arc::new(Mutex::new(cfg.ws_port)),
+            always_on_top: Arc::new(AtomicBool::new(cfg.always_on_top)),
+            start_minimized: Arc::new(AtomicBool::new(cfg.start_minimized)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -189,6 +237,10 @@ fn main() {
             get_ws_enabled,
             set_ws_port,
             get_ws_port,
+            set_always_on_top,
+            get_always_on_top,
+            set_start_minimized,
+            get_start_minimized,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -196,6 +248,7 @@ fn main() {
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
                 let state = app.state::<AppState>();
+                save_config(&state);
                 if *state.osc_enabled.lock().unwrap() {
                     let port = *state.osc_port.lock().unwrap();
                     let params = state.osc_params.lock().unwrap().clone();
