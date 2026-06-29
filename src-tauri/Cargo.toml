@@ -11,6 +11,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rosc = "0.10"
 dirs = "6"
+reqwest = { version = "0.12", features = ["json"] }
 tauri-plugin-updater = "2"
 tauri-plugin-notification = "2"
 warp = "0.3"

@@ -583,9 +583,10 @@ async function checkForUpdates() {
   try {
     updateState = "checking";
     updateBtnText();
-    const result = await invoke("plugin:updater|check");
-    addLog(`Latest version from updater: v${result?.version || "unknown"}`, "info");
-    if (result && result.available) {
+    addLog("Checking for updates...", "info");
+    const result = await invoke("check_update");
+    if (result) {
+      addLog(`Latest version from updater: v${result.version}`, "info");
       pendingUpdate = result;
       updateState = "available";
       addLog(`Update available: v${result.version}`, "info");
@@ -605,13 +606,10 @@ document.getElementById("updateBtn").addEventListener("click", async () => {
   updateState = "updating";
   updateBtnText();
   addLog("Downloading update...", "info");
-  try {
-    await invoke("plugin:updater|download_and_install");
-    addLog("Update installed. Restarting...", "info");
-    await invoke("plugin:process|restart");
-  } catch (e) {
-    addLog(`Update failed: ${e}`, "error");
-    updateState = "failed";
+  if (pendingUpdate?.url) {
+    addLog(`Opening download: ${pendingUpdate.url}`, "info");
+    window.open(pendingUpdate.url, "_blank");
+    updateState = "uptodate";
     updateBtnText();
   }
 });

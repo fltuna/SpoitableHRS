@@ -1,45 +1,43 @@
 // SpoitableHRS Update Server — Cloudflare Worker
-//
-// Tauri updater checks: GET /update/{target}/{current_version}
-//
-// KV "UPDATES" stores:
-//   key: "latest" → JSON { version, notes, pub_date, platforms: { "windows-x86_64": { url, signature } } }
-//
-// To publish an update, put the manifest in KV:
-//   wrangler kv:key put --binding UPDATES "latest" '{ "version": "0.2.0", ... }'
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 export default {
   async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS });
+    }
+
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Health check
     if (path === "/health") {
-      return Response.json({ status: "ok", version: env.CURRENT_VERSION });
+      return Response.json({ status: "ok", version: env.CURRENT_VERSION }, { headers: CORS });
     }
 
-    // Tauri updater endpoint: /update/{target}/{current_version}
     const match = path.match(/^\/update\/([^/]+)\/([^/]+)$/);
     if (!match) {
-      return new Response("Not Found", { status: 404 });
+      return new Response("Not Found", { status: 404, headers: CORS });
     }
 
     const [, target, currentVersion] = match;
 
     const latest = await env.UPDATES.get("latest", "json");
     if (!latest) {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers: CORS });
     }
 
-    // No update needed if already on latest
     if (latest.version === currentVersion || !isNewer(latest.version, currentVersion)) {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers: CORS });
     }
 
-    // Check if platform is supported
     const platform = latest.platforms?.[target];
     if (!platform) {
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: 204, headers: CORS });
     }
 
     return Response.json({
@@ -48,7 +46,7 @@ export default {
       pub_date: latest.pub_date || new Date().toISOString(),
       url: platform.url,
       signature: platform.signature,
-    });
+    }, { headers: CORS });
   },
 };
 

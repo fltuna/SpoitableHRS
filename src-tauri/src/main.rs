@@ -206,6 +206,20 @@ fn get_language(state: State<'_, AppState>) -> String {
     state.language.lock().unwrap().clone()
 }
 
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    let version = app.config().version.clone().unwrap_or_default();
+    let url = format!(
+        "https://spoitable.update.f2a.dev/update/windows-x86_64/{version}"
+    );
+    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    if resp.status().as_u16() == 204 {
+        return Ok(None);
+    }
+    let data: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(Some(data))
+}
+
 fn main() {
     let cfg = config::load();
 
@@ -292,6 +306,7 @@ fn main() {
             get_start_minimized,
             set_language,
             get_language,
+            check_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
