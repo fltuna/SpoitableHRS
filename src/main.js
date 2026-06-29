@@ -581,19 +581,18 @@ function updateBtnText() {
 
 async function checkForUpdates() {
   try {
-    const { check } = window.__TAURI__.updater || {};
-    if (!check) return;
     updateState = "checking";
     updateBtnText();
-    const update = await check();
-    if (update?.available) {
-      pendingUpdate = update;
+    const result = await invoke("plugin:updater|check");
+    if (result && result.available) {
+      pendingUpdate = result;
       updateState = "available";
-      addLog(`Update available: v${update.version}`, "info");
+      addLog(`Update available: v${result.version}`, "info");
     } else {
       updateState = "uptodate";
     }
   } catch (e) {
+    addLog(`Update check: ${e}`, "warn");
     updateState = "idle";
   }
   updateBtnText();
@@ -605,10 +604,9 @@ document.getElementById("updateBtn").addEventListener("click", async () => {
   updateBtnText();
   addLog("Downloading update...", "info");
   try {
-    await pendingUpdate.downloadAndInstall();
+    await invoke("plugin:updater|download_and_install");
     addLog("Update installed. Restarting...", "info");
-    const { relaunch } = window.__TAURI__.process || {};
-    if (relaunch) await relaunch();
+    await invoke("plugin:process|restart");
   } catch (e) {
     addLog(`Update failed: ${e}`, "error");
     updateState = "failed";
