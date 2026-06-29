@@ -1,6 +1,6 @@
 {
   "name": "spoitable-hrs",
-  "version": "2026.6.31",
+  "version": "2026.6.32",
   "description": "BLE Heart Rate Monitor with OSC for VRChat",
   "scripts": {
     "tauri": "tauri",

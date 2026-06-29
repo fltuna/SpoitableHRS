@@ -51,6 +51,11 @@ body {
   z-index: 25; pointer-events: none;
 }
 .app-title span { font-size: 11px; color: #999; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
+.title-version {
+  position: absolute; top: 33px; left: 0; right: 0;
+  text-align: center; font-size: 9px; color: #555;
+  letter-spacing: 0.1em; pointer-events: none; z-index: 25;
+}
 .title-line { width: 40px; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06)); }
 .title-line:last-child { background: linear-gradient(90deg, rgba(255,255,255,0.06), transparent); }
 

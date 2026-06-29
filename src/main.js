@@ -536,6 +536,7 @@ updateConnectionUI();
 
 invoke("plugin:app|version").then(v => {
   document.getElementById("appVersion").textContent = `v${v}`;
+  document.getElementById("titleVersion").textContent = `v${v}`;
 }).catch(() => {});
 
 addLog("SpoitableHRS initialized");
