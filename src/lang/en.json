@@ -35,6 +35,11 @@
   "settings.language": "Language",
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
+  "settings.checkingUpdate": "Checking for updates...",
+  "settings.upToDate": "Up to date",
+  "settings.updateAvailable": "Update available",
+  "settings.updating": "Updating...",
+  "settings.updateFailed": "Update failed",
 
   "sidebar.monitor": "Monitor",
   "sidebar.overlay": "Overlay",

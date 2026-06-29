@@ -529,22 +529,45 @@ loadAllSettings();
 updateConnectionUI();
 addLog("SpoitableHRS initialized");
 
-// ── Auto-update check ──
+// ── Update check (manual) ──
+let pendingUpdate = null;
+
 async function checkForUpdates() {
   try {
     const { check } = window.__TAURI__.updater || {};
     if (!check) return;
     const update = await check();
+    const btn = document.getElementById("updateBtn");
     if (update?.available) {
+      pendingUpdate = update;
       addLog(`Update available: v${update.version}`, "info");
-      addLog("Downloading update...", "info");
-      await update.downloadAndInstall();
-      addLog("Update installed. Restarting...", "info");
-      const { relaunch } = window.__TAURI__.process || {};
-      if (relaunch) await relaunch();
+      btn.textContent = `${t("settings.updateAvailable") || "Update available"}: v${update.version}`;
+      btn.disabled = false;
+      btn.classList.add("update-ready");
+    } else {
+      btn.textContent = t("settings.upToDate") || "Up to date";
     }
   } catch (e) {
     // Silently ignore update errors in dev mode
   }
 }
+
+document.getElementById("updateBtn").addEventListener("click", async () => {
+  if (!pendingUpdate) return;
+  const btn = document.getElementById("updateBtn");
+  btn.textContent = t("settings.updating") || "Updating...";
+  btn.disabled = true;
+  addLog("Downloading update...", "info");
+  try {
+    await pendingUpdate.downloadAndInstall();
+    addLog("Update installed. Restarting...", "info");
+    const { relaunch } = window.__TAURI__.process || {};
+    if (relaunch) await relaunch();
+  } catch (e) {
+    addLog(`Update failed: ${e}`, "error");
+    btn.textContent = t("settings.updateFailed") || "Update failed";
+    btn.disabled = false;
+  }
+});
+
 checkForUpdates();

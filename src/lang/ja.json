@@ -35,6 +35,11 @@
   "settings.language": "言語",
   "settings.aboutHeader": "このアプリについて",
   "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
+  "settings.checkingUpdate": "更新を確認中...",
+  "settings.upToDate": "最新です",
+  "settings.updateAvailable": "更新あり",
+  "settings.updating": "更新中...",
+  "settings.updateFailed": "更新に失敗しました",
 
   "sidebar.monitor": "モニター",
   "sidebar.overlay": "オーバーレイ",
