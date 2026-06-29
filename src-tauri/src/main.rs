@@ -276,6 +276,7 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
             Ok(())
         })
         .manage(AppState {
