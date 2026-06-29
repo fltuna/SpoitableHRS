@@ -1,4 +1,4 @@
-const { invoke } = window.__TAURI__.core;
+const { invoke, Channel } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 // ── i18n ──
@@ -542,7 +542,8 @@ addLog("SpoitableHRS initialized");
 
 // ── Update check (manual) ──
 let pendingUpdate = null;
-let updateState = "idle"; // idle | checking | available | uptodate | updating | failed
+let useTauriUpdater = false;
+let updateState = "idle";
 
 function updateBtnText() {
   const btn = document.getElementById("updateBtn");
@@ -567,6 +568,11 @@ function updateBtnText() {
       btn.disabled = true;
       btn.classList.remove("update-ready");
       break;
+    case "downloaded":
+      btn.textContent = t("settings.downloadStarted");
+      btn.disabled = true;
+      btn.classList.remove("update-ready");
+      break;
     case "failed":
       btn.textContent = t("settings.updateFailed");
       btn.disabled = false;
@@ -584,12 +590,32 @@ async function checkForUpdates() {
     updateState = "checking";
     updateBtnText();
     addLog("Checking for updates...", "info");
+
+    try {
+      const metadata = await invoke("plugin:updater|check", {});
+      if (metadata && metadata.version) {
+        addLog(`Update available: v${metadata.version}`, "info");
+        pendingUpdate = metadata;
+        useTauriUpdater = true;
+        updateState = "available";
+        updateBtnText();
+        return;
+      } else {
+        updateState = "uptodate";
+        addLog("No updates available", "info");
+        updateBtnText();
+        return;
+      }
+    } catch (e) {
+      addLog(`Tauri updater: ${e}`, "info");
+    }
+
     const result = await invoke("check_update");
     if (result) {
-      addLog(`Latest version from updater: v${result.version}`, "info");
-      pendingUpdate = result;
-      updateState = "available";
       addLog(`Update available: v${result.version}`, "info");
+      pendingUpdate = result;
+      useTauriUpdater = false;
+      updateState = "available";
     } else {
       updateState = "uptodate";
       addLog("No updates available", "info");
@@ -605,12 +631,44 @@ document.getElementById("updateBtn").addEventListener("click", async () => {
   if (!pendingUpdate) return;
   updateState = "updating";
   updateBtnText();
-  addLog("Downloading update...", "info");
-  if (pendingUpdate?.url) {
-    addLog(`Opening download: ${pendingUpdate.url}`, "info");
-    window.open(pendingUpdate.url, "_blank");
-    updateState = "uptodate";
-    updateBtnText();
+
+  if (useTauriUpdater) {
+    try {
+      addLog("Downloading and installing update...", "info");
+      const channel = new Channel();
+      channel.onmessage = (event) => {
+        switch (event.event) {
+          case "Started":
+            if (event.data.contentLength) {
+              addLog(`Download started (${Math.round(event.data.contentLength / 1024)} KB)`);
+            }
+            break;
+          case "Finished":
+            addLog("Download complete, installing...");
+            break;
+        }
+      };
+      await invoke("plugin:updater|download_and_install", {
+        onEvent: channel,
+        rid: pendingUpdate.rid,
+      });
+      addLog("Update installed. Restarting...", "info");
+      await invoke("plugin:process|restart");
+    } catch (e) {
+      addLog(`Update failed: ${e}`, "error");
+      updateState = "failed";
+      updateBtnText();
+    }
+  } else {
+    try {
+      await invoke("open_url", { url: pendingUpdate.url });
+      updateState = "downloaded";
+      updateBtnText();
+    } catch (e) {
+      addLog(`Update failed: ${e}`, "error");
+      updateState = "failed";
+      updateBtnText();
+    }
   }
 });
 

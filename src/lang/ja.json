@@ -39,6 +39,7 @@
   "settings.upToDate": "最新です",
   "settings.updateAvailable": "更新あり",
   "settings.updating": "更新中...",
+  "settings.downloadStarted": "ダウンロード開始 — インストールして再起動してください",
   "settings.updateFailed": "更新に失敗しました",
 
   "sidebar.monitor": "モニター",

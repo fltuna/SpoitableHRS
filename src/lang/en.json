@@ -39,6 +39,7 @@
   "settings.upToDate": "Up to date",
   "settings.updateAvailable": "Update available",
   "settings.updating": "Updating...",
+  "settings.downloadStarted": "Download started — install and restart",
   "settings.updateFailed": "Update failed",
 
   "sidebar.monitor": "Monitor",

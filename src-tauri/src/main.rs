@@ -207,6 +207,15 @@ fn get_language(state: State<'_, AppState>) -> String {
 }
 
 #[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "", &url])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
     let version = app.config().version.clone().unwrap_or_default();
     let url = format!(
@@ -235,6 +244,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             use tauri::Manager;
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -307,6 +317,7 @@ fn main() {
             set_language,
             get_language,
             check_update,
+            open_url,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
