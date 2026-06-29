@@ -594,7 +594,7 @@ async function checkForUpdates() {
 
     // Try Tauri updater plugin first
     try {
-      const metadata = await invoke("plugin:updater|check", {});
+      const metadata = await invoke("plugin:updater|check", { headers: [] });
       addLog(`Tauri updater result: ${JSON.stringify(metadata)}`, "info");
       if (metadata && metadata.version) {
         addLog(`Update available: v${metadata.version}`, "info");
