@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpoitableHRS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="tabs">
+      <button class="tab active" data-tab="main">Monitor</button>
+      <button class="tab" data-tab="log">Log</button>
+    </div>
+
+    <div class="tab-content active" id="tab-main">
+      <div class="hr-display">
+        <div class="hr-icon" id="heart">&#9829;</div>
+        <div class="hr-value"><span id="bpm">--</span></div>
+        <div class="hr-label">BPM</div>
+      </div>
+
+      <div class="hr-graph">
+        <canvas id="hrCanvas"></canvas>
+      </div>
+
+      <div class="controls">
+        <div class="section">
+          <button id="scanBtn" class="btn btn-primary">Scan Devices</button>
+          <select id="deviceList" class="select" disabled>
+            <option value="">-- Select Device --</option>
+          </select>
+          <button id="connectBtn" class="btn btn-connect" disabled>Connect</button>
+        </div>
+
+        <div class="section osc-settings">
+          <label class="toggle">
+            <input type="checkbox" id="oscToggle" checked />
+            <span>OSC Output</span>
+          </label>
+          <div class="port-input">
+            <label for="oscPort">Port:</label>
+            <input type="number" id="oscPort" value="9000" min="1" max="65535" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-log">
+      <div class="log-toolbar">
+        <button id="clearLogBtn" class="btn btn-small">Clear</button>
+      </div>
+      <div class="log-container" id="logContainer"></div>
+    </div>
+
+    <div id="status" class="status">Ready</div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
