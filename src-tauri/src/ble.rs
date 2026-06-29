@@ -231,10 +231,21 @@ pub async fn connect_and_subscribe(
     *connected.lock().unwrap() = true;
     let _ = app.emit("connection-changed", true);
 
+    let mut hr_sum: u64 = 0;
+    let mut hr_count: u64 = 0;
+    let mut hr_min: u16 = u16::MAX;
+    let mut hr_max: u16 = 0;
+
     while let Some(hr) = rx.recv().await {
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
+
+        hr_sum += hr as u64;
+        hr_count += 1;
+        if hr < hr_min { hr_min = hr; }
+        if hr > hr_max { hr_max = hr; }
+        let hr_avg = (hr_sum / hr_count) as u16;
 
         *heart_rate.lock().unwrap() = hr;
         let _ = app.emit("heart-rate-update", hr);
@@ -256,7 +267,7 @@ pub async fn connect_and_subscribe(
 
         if ws_enabled.load(Ordering::Relaxed) {
             let zone = if hr >= 140 { "hard" } else if hr >= 120 { "moderate" } else if hr >= 100 { "light" } else { "rest" };
-            let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true}}"#);
+            let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{hr_avg},"min":{hr_min},"max":{hr_max}}}"#);
             ws_broadcaster.send(&json);
         }
     }

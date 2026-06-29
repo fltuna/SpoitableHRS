@@ -379,10 +379,10 @@ document.getElementById("copyLogBtn").addEventListener("click", () => {
 
 // ── Overlay tab ──
 const OVERLAYS = [
-  { name: "Pill Badge", file: "pill", desc: "Minimal · Corner placement", size: "200×56" },
-  { name: "Glass Card", file: "glass", desc: "Liquid Glass · Mini graph", size: "300×130" },
-  { name: "Neon Ring", file: "neon", desc: "Cyberpunk · Circular progress", size: "192×192" },
-  { name: "Full Widget", file: "widget", desc: "Full info · Graph + Stats", size: "340×160" },
+  { name: "Pill Badge", file: "pill", desc: "Minimal · Corner placement", size: "400×112" },
+  { name: "Glass Card", file: "glass", desc: "Liquid Glass · Mini graph", size: "600×260" },
+  { name: "Neon Ring", file: "neon", desc: "Cyberpunk · Circular progress", size: "384×384" },
+  { name: "Full Widget", file: "widget", desc: "Full info · Graph + Stats", size: "680×320" },
 ];
 
 function renderOverlayList() {
@@ -394,7 +394,7 @@ function renderOverlayList() {
     card.className = "overlay-card";
     card.innerHTML = `
       <div class="overlay-preview">
-        <iframe src="http://localhost:${port}/overlay/${o.file}" style="border:none;width:100%;height:100%;pointer-events:none;background:transparent" loading="lazy"></iframe>
+        <iframe src="http://localhost:${port}/overlay/${o.file}" loading="lazy"></iframe>
       </div>
       <div class="overlay-info">
         <div>

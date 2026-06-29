@@ -50,7 +50,7 @@ body {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   z-index: 25; pointer-events: none;
 }
-.app-title span { font-size: 11px; color: #666; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
+.app-title span { font-size: 11px; color: #999; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
 .title-line { width: 40px; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06)); }
 .title-line:last-child { background: linear-gradient(90deg, rgba(255,255,255,0.06), transparent); }
 
@@ -204,7 +204,7 @@ body {
   margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.06);
 }
 .s-header {
-  font-size: 11px; font-weight: 700; color: #666; text-transform: uppercase;
+  font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase;
   letter-spacing: 0.1em; margin-bottom: 12px; padding-bottom: 8px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
@@ -245,10 +245,10 @@ body {
 }
 .zone-dot { width: 8px; height: 8px; border-radius: 50%; }
 .zone-name { font-size: 13px; color: #ccc; flex: 1; }
-.zone-range { font-size: 12px; color: #555; font-family: "Cascadia Code", "Consolas", monospace; }
+.zone-range { font-size: 12px; color: #888; font-family: "Cascadia Code", "Consolas", monospace; }
 
 /* About */
-.about-text { font-size: 12px; color: #555; line-height: 1.8; }
+.about-text { font-size: 12px; color: #888; line-height: 1.8; }
 .about-version { color: #777; }
 
 /* ── Log ── */
@@ -299,13 +299,13 @@ body {
   font-size: 14px; font-weight: 600;
 }
 .modal-close {
-  background: none; border: none; color: #666; font-size: 13px;
+  background: none; border: none; color: #999; font-size: 13px;
   cursor: pointer; padding: 2px 6px; border-radius: 4px;
 }
 .modal-close:hover { background: #333; color: #eee; }
 .modal-body { padding: 8px; max-height: 300px; overflow-y: auto; }
 .modal-scanning { text-align: center; padding: 24px; color: #aaa; font-size: 13px; }
-.modal-empty { text-align: center; padding: 24px; color: #666; font-size: 13px; }
+.modal-empty { text-align: center; padding: 24px; color: #999; font-size: 13px; }
 
 .device-item {
   display: flex; align-items: center; justify-content: space-between;
@@ -314,7 +314,7 @@ body {
 .device-item:hover { background: rgba(255,255,255,0.03); }
 .device-name { font-size: 13px; font-weight: 500; color: #eee; }
 .device-id { font-size: 11px; color: #999; margin-top: 3px; }
-.device-arrow { color: #555; font-size: 18px; }
+.device-arrow { color: #888; font-size: 18px; }
 
 /* ── Overlay tab ── */
 .overlay-list { display: flex; flex-direction: column; gap: 10px; }
@@ -323,13 +323,20 @@ body {
   border: 1px solid rgba(255,255,255,0.03);
 }
 .overlay-preview {
-  display: flex; justify-content: center; padding: 14px 0;
+  display: flex; justify-content: center; align-items: center;
   background: repeating-conic-gradient(#1a1a2e 0% 25%, #161622 0% 50%) 50% / 10px 10px;
-  border-radius: 8px; margin-bottom: 10px; min-height: 60px;
+  border-radius: 8px; margin-bottom: 10px; height: 100px; overflow: hidden;
+  position: relative;
+}
+.overlay-preview iframe {
+  border: none; pointer-events: none; background: transparent;
+  position: absolute;
+  width: 800px; height: 500px;
+  transform: scale(0.35); transform-origin: center center;
 }
 .overlay-info { display: flex; align-items: center; justify-content: space-between; }
 .overlay-name { font-size: 12px; font-weight: 600; color: #ccc; }
-.overlay-desc { font-size: 10px; color: #555; margin-top: 2px; }
+.overlay-desc { font-size: 10px; color: #888; margin-top: 2px; }
 .overlay-btns { display: flex; gap: 4px; }
 .overlay-btn {
   padding: 5px 8px; background: rgba(255,255,255,0.04);
@@ -341,7 +348,7 @@ body {
 .overlay-btn.accent { background: rgba(58,134,255,0.1); border-color: rgba(58,134,255,0.15); color: #3a86ff; }
 .overlay-btn.accent:hover { background: rgba(58,134,255,0.2); }
 .overlay-btn.copied { background: rgba(46,204,113,0.15); border-color: rgba(46,204,113,0.2); color: #2ecc71; }
-.overlay-help { font-size: 11px; color: #444; line-height: 1.6; padding: 4px; }
+.overlay-help { font-size: 11px; color: #888; line-height: 1.6; padding: 4px; }
 
 /* ── Animations ── */
 @keyframes heartbeat {

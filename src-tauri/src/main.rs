@@ -74,6 +74,19 @@ async fn disconnect_device(state: State<'_, AppState>) -> Result<(), String> {
     }
     *state.connected.lock().unwrap() = false;
     *state.heart_rate.lock().unwrap() = 0;
+
+    if *state.osc_enabled.lock().unwrap() {
+        let port = *state.osc_port.lock().unwrap();
+        let params = state.osc_params.lock().unwrap().clone();
+        let hr_state = osc::HrState {
+            hr: 0,
+            is_connected: false,
+            is_active: false,
+            beat_toggle: false,
+        };
+        let _ = osc::send_hr_params(port, &params, &hr_state);
+    }
+
     Ok(())
 }
 
@@ -177,6 +190,26 @@ fn main() {
             set_ws_port,
             get_ws_port,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                let state = app.state::<AppState>();
+                if *state.osc_enabled.lock().unwrap() {
+                    let port = *state.osc_port.lock().unwrap();
+                    let params = state.osc_params.lock().unwrap().clone();
+                    let _ = osc::send_hr_params(
+                        port,
+                        &params,
+                        &osc::HrState {
+                            hr: 0,
+                            is_connected: false,
+                            is_active: false,
+                            beat_toggle: false,
+                        },
+                    );
+                }
+            }
+        });
 }
