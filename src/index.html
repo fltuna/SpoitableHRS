@@ -7,130 +7,188 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="titlebar" id="titlebar">
-    <span class="titlebar-title">SpoitableHRS</span>
-    <div class="titlebar-buttons">
-      <button class="titlebar-btn" id="minimizeBtn">&#x2013;</button>
-      <button class="titlebar-btn titlebar-close" id="closeBtn">&#x2715;</button>
-    </div>
-  </div>
+  <div class="app">
+    <!-- Top blur backdrop -->
+    <div class="top-backdrop"></div>
 
-  <div class="container">
-    <div class="tabs">
-      <button class="tab active" data-tab="main">Monitor</button>
-      <button class="tab" data-tab="osc">OSC</button>
-      <button class="tab" data-tab="settings">Settings</button>
-      <button class="tab" data-tab="log">Log</button>
+    <!-- App title (center) -->
+    <div class="app-title">
+      <div class="title-line"></div>
+      <span>SpoitableHRS</span>
+      <div class="title-line"></div>
     </div>
 
-    <div class="tab-content active" id="tab-main">
-      <div class="hr-display">
-        <div class="hr-icon" id="heart">&#9829;</div>
-        <div class="hr-value"><span id="bpm">--</span></div>
-        <div class="hr-label">BPM</div>
-      </div>
+    <!-- Status indicator (top-left) -->
+    <div class="status-indicator" id="statusIndicator">
+      <div class="status-dot"></div>
+      <span class="status-label">Disconnected</span>
+    </div>
 
-      <div class="hr-graph">
-        <canvas id="hrCanvas"></canvas>
-      </div>
+    <!-- Window controls (top-right) -->
+    <div class="win-controls" id="titlebar">
+      <button class="win-btn" id="minimizeBtn">&#x2013;</button>
+      <button class="win-btn win-close" id="closeBtn">&#x2715;</button>
+    </div>
 
-      <div class="controls">
-        <div class="section">
-          <button id="scanConnectBtn" class="btn btn-primary">Scan &amp; Connect</button>
+    <!-- Content area -->
+    <div class="content">
+      <!-- Monitor: Connected -->
+      <div class="view active" id="view-monitor">
+        <div class="monitor-connected hidden" id="monitorConnected">
+          <div class="monitor-center">
+            <div class="hr-icon" id="heart">&#9829;</div>
+            <div class="hr-big" id="bpm"></div>
+            <div class="hr-zone" id="hrZone"></div>
+          </div>
+          <div class="monitor-bottom">
+            <div class="monitor-device-info">
+              <span class="device-info-name" id="connectedDeviceName"></span>
+              <span class="device-info-id" id="connectedDeviceId"></span>
+            </div>
+            <div class="hr-graph">
+              <canvas id="hrCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="monitor-disconnected" id="monitorDisconnected">
+          <div class="scan-circle" id="scanCircle">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.5" stroke-linecap="round">
+              <path d="M12 2v6" /><path d="M16.24 5.76a8 8 0 1 1-8.48 0" />
+            </svg>
+          </div>
+          <div class="scan-spinner hidden" id="scanSpinner">
+            <div class="spinner-ring"></div>
+          </div>
+          <div class="scan-label" id="scanLabel"></div>
         </div>
       </div>
 
+      <!-- OSC -->
+      <div class="view" id="view-osc">
+        <div class="scroll-area">
+          <div class="s-section">
+            <div class="s-header">OSC Output</div>
+            <div class="toggle-row">
+              <div class="toggle-switch" id="oscToggle" data-checked="true"><div class="toggle-thumb"></div></div>
+              <span>Enable</span>
+            </div>
+            <div class="s-row"><span class="s-label">IP</span><input type="text" id="oscIp" value="127.0.0.1" class="s-input" /></div>
+            <div class="s-row"><span class="s-label">Port</span><input type="number" id="oscPort" value="9000" class="s-input s-input-short" /></div>
+          </div>
+          <div class="s-section">
+            <div class="s-header">Parameter Names</div>
+            <div class="s-row"><span class="s-label mono">HR</span><input type="text" id="param-hr" value="HR" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">onesHR</span><input type="text" id="param-ones_hr" value="onesHR" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">tensHR</span><input type="text" id="param-tens_hr" value="tensHR" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">hundredsHR</span><input type="text" id="param-hundreds_hr" value="hundredsHR" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">isHRConnected</span><input type="text" id="param-is_hr_connected" value="isHRConnected" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">isHRActive</span><input type="text" id="param-is_hr_active" value="isHRActive" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">isHRBeat</span><input type="text" id="param-is_hr_beat" value="isHRBeat" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">HRPercent</span><input type="text" id="param-hr_percent" value="HRPercent" class="s-input" /></div>
+            <div class="s-row"><span class="s-label mono">FullHRPercent</span><input type="text" id="param-full_hr_percent" value="FullHRPercent" class="s-input" /></div>
+            <button id="saveParamsBtn" class="s-btn">Save Parameters</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay -->
+      <div class="view" id="view-overlay">
+        <div class="scroll-area">
+          <div class="s-section">
+            <div class="s-header">WebSocket Server</div>
+            <div class="toggle-row">
+              <div class="toggle-switch" id="wsToggle" data-checked="true"><div class="toggle-thumb"></div></div>
+              <span>Enable</span>
+            </div>
+            <div class="s-row"><span class="s-label">Port</span><input type="number" id="wsPort" value="9100" class="s-input s-input-short" /></div>
+          </div>
+          <div class="s-section">
+            <div class="s-header">Templates</div>
+            <div class="overlay-list" id="overlayList"></div>
+          </div>
+          <div class="overlay-help">
+            <b>URL</b> — Paste into OBS Browser Source<br>
+            <b>HTML</b> — Copy full HTML for customization
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div class="view" id="view-settings">
+        <div class="scroll-area">
+          <div class="s-section">
+            <div class="s-header">Heart Rate Zones</div>
+            <div class="zone-row"><div class="zone-dot" style="background:#2ecc71"></div><span class="zone-name">Rest</span><span class="zone-range">&lt; 100 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#3a86ff"></div><span class="zone-name">Light</span><span class="zone-range">100 – 120 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#f39c12"></div><span class="zone-name">Moderate</span><span class="zone-range">120 – 140 BPM</span></div>
+            <div class="zone-row"><div class="zone-dot" style="background:#e74c3c"></div><span class="zone-name">Hard</span><span class="zone-range">140+ BPM</span></div>
+          </div>
+          <div class="s-section">
+            <div class="s-header">General</div>
+            <div class="s-row"><span class="s-label">Always on top</span><div class="toggle-switch" id="alwaysOnTopToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
+            <div class="s-row"><span class="s-label">Start minimized</span><div class="toggle-switch" id="startMinToggle" data-checked="false"><div class="toggle-thumb"></div></div></div>
+          </div>
+          <div class="s-section">
+            <div class="s-header">About</div>
+            <div class="about-text">
+              <div>SpoitableHRS <span class="about-version">v0.1.0</span></div>
+              <div>BLE Heart Rate Monitor with OSC for VRChat</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Log -->
+      <div class="view" id="view-log">
+        <div class="log-wrap">
+          <div class="log-container" id="logContainer"></div>
+          <div class="log-bar">
+            <button class="log-btn" id="copyLogBtn">Copy to Clipboard</button>
+            <button class="log-btn" id="clearLogBtn">Clear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Device selection modal -->
     <div class="modal-overlay" id="deviceModal">
       <div class="modal">
         <div class="modal-header">
           <span>Select Device</span>
           <button class="modal-close" id="modalCloseBtn">&#x2715;</button>
         </div>
-        <div class="modal-body" id="deviceListBody">
-          <div class="modal-scanning">Scanning...</div>
-        </div>
-      </div>
-    </div>
-    </div>
-
-    <div class="tab-content" id="tab-osc">
-      <div class="settings-scroll">
-        <div class="settings-section">
-          <div class="settings-header">OSC Output</div>
-          <label class="toggle">
-            <input type="checkbox" id="oscToggle" checked />
-            <span>Enable</span>
-          </label>
-          <div class="setting-row">
-            <label>IP</label>
-            <input type="text" id="oscIp" value="127.0.0.1" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>Port</label>
-            <input type="number" id="oscPort" value="9000" min="1" max="65535" class="setting-input setting-input-short" />
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <div class="settings-header">Parameter Names</div>
-          <div class="setting-row">
-            <label>HR</label>
-            <input type="text" id="param-hr" value="HR" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>onesHR</label>
-            <input type="text" id="param-ones_hr" value="onesHR" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>tensHR</label>
-            <input type="text" id="param-tens_hr" value="tensHR" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>hundredsHR</label>
-            <input type="text" id="param-hundreds_hr" value="hundredsHR" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>isHRConnected</label>
-            <input type="text" id="param-is_hr_connected" value="isHRConnected" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>isHRActive</label>
-            <input type="text" id="param-is_hr_active" value="isHRActive" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>isHRBeat</label>
-            <input type="text" id="param-is_hr_beat" value="isHRBeat" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>HRPercent</label>
-            <input type="text" id="param-hr_percent" value="HRPercent" class="setting-input" />
-          </div>
-          <div class="setting-row">
-            <label>FullHRPercent</label>
-            <input type="text" id="param-full_hr_percent" value="FullHRPercent" class="setting-input" />
-          </div>
-          <button id="saveParamsBtn" class="btn btn-primary btn-full">Save Parameters</button>
-        </div>
+        <div class="modal-body" id="deviceListBody"></div>
       </div>
     </div>
 
-    <div class="tab-content" id="tab-settings">
-      <div class="settings-scroll">
-        <div class="settings-section">
-          <div class="settings-header">General</div>
-          <p class="setting-placeholder">Coming soon...</p>
-        </div>
+    <!-- Sidebar trigger -->
+    <div class="sidebar-trigger" id="sidebarTrigger"></div>
+    <div class="sidebar-hint" id="sidebarHint"></div>
+
+    <!-- Floating sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-icon active" data-view="monitor" data-label="Monitor">
+        <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <div class="sidebar-tooltip">Monitor</div>
+      </div>
+      <div class="sidebar-icon" data-view="osc" data-label="OSC">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-7v4h4l-5 7z"/></svg>
+        <div class="sidebar-tooltip">OSC</div>
+      </div>
+      <div class="sidebar-icon" data-view="overlay" data-label="Overlay">
+        <svg viewBox="0 0 24 24"><path d="M2 17l10 5 10-5M2 12l10 5 10-5M12 2L2 7l10 5 10-5-10-5z"/></svg>
+        <div class="sidebar-tooltip">Overlay</div>
+      </div>
+      <div class="sidebar-icon" data-view="settings" data-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.09-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+        <div class="sidebar-tooltip">Settings</div>
+      </div>
+      <div class="sidebar-icon" data-view="log" data-label="Log">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        <div class="sidebar-tooltip">Log</div>
       </div>
     </div>
-
-    <div class="tab-content" id="tab-log">
-      <div class="log-toolbar">
-        <button id="clearLogBtn" class="btn btn-small">Clear</button>
-      </div>
-      <div class="log-container" id="logContainer"></div>
-    </div>
-
-    <div id="status" class="status">Ready</div>
   </div>
 
   <script type="module" src="main.js"></script>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:transparent;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:'Segoe UI',system-ui,sans-serif}
+@keyframes heartbeat{0%,100%{transform:scale(1)}15%{transform:scale(1.15)}30%{transform:scale(.95)}45%{transform:scale(1.08)}}
+.card{width:300px;padding:14px 18px;background:rgba(255,255,255,.05);border-radius:14px;border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px)}
+.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.left{display:flex;align-items:center;gap:10px}
+.heart{font-size:22px;color:#e74c6f;animation:heartbeat .85s ease-in-out infinite}
+.bpm{font-size:30px;font-weight:700;color:#eee;font-variant-numeric:tabular-nums}
+.unit{font-size:12px;color:#888}
+.zone{font-size:11px;font-weight:600;text-transform:uppercase}
+.graph{height:44px;background:linear-gradient(90deg,rgba(58,134,255,.08),rgba(58,134,255,.02));border-radius:6px;overflow:hidden}
+.graph canvas{width:100%;height:100%;display:block}
+.bot{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:10px;color:#555}
+.dot{width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:4px}
+</style></head><body>
+<div class="card">
+  <div class="top">
+    <div class="left">
+      <span class="heart">&#9829;</span>
+      <span class="bpm" id="bpm">--</span>
+      <span class="unit">BPM</span>
+    </div>
+    <span class="zone" id="zone" style="color:#2ecc71">Rest</span>
+  </div>
+  <div class="graph"><canvas id="cv"></canvas></div>
+  <div class="bot">
+    <span>Polar Sense</span>
+    <span><span class="dot" id="dot" style="background:#2ecc71"></span><span id="status">Connecting</span></span>
+  </div>
+</div>
+<script>
+const hist=[];const MAX=60;
+const cv=document.getElementById('cv');const ctx=cv.getContext('2d');
+function draw(){const r=cv.parentElement.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;
+ctx.clearRect(0,0,cv.width,cv.height);if(hist.length<2)return;
+const mn=Math.min(...hist)-3,mx=Math.max(...hist)+3,rng=mx-mn;
+const g=ctx.createLinearGradient(0,0,0,cv.height);g.addColorStop(0,'#ff5555');g.addColorStop(1,'#3a86ff');
+ctx.strokeStyle=g;ctx.lineWidth=1.5*devicePixelRatio;ctx.lineJoin='round';ctx.beginPath();
+const s=cv.width/(MAX-1),o=MAX-hist.length;
+hist.forEach((v,i)=>{const x=(o+i)*s,y=cv.height-((v-mn)/rng)*cv.height;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});
+ctx.stroke()}
+const zones={rest:{l:'Rest',c:'#2ecc71'},light:{l:'Light',c:'#3a86ff'},moderate:{l:'Moderate',c:'#f39c12'},hard:{l:'Hard',c:'#e74c3c'}};
+const p=new URLSearchParams(location.search),port=p.get('port')||location.port||'9100';
+let ws;function connect(){ws=new WebSocket(`ws://${location.hostname||'localhost'}:${port}/ws`);
+ws.onmessage=e=>{const d=JSON.parse(e.data);
+if(d.bpm!==undefined){document.getElementById('bpm').textContent=d.bpm;hist.push(d.bpm);if(hist.length>MAX)hist.shift();draw()}
+if(d.zone&&zones[d.zone]){const z=zones[d.zone];document.getElementById('zone').textContent=z.l;document.getElementById('zone').style.color=z.c}
+if(d.connected!==undefined){document.getElementById('status').textContent=d.connected?'Connected':'Disconnected';document.getElementById('dot').style.background=d.connected?'#2ecc71':'#e74c3c'}
+if(d.type==='welcome'&&d.history){hist.push(...d.history);while(hist.length>MAX)hist.shift();draw()}};
+ws.onclose=()=>setTimeout(connect,2000)}connect();
+</script></body></html>

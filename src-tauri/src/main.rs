@@ -2,6 +2,7 @@
 
 mod ble;
 mod osc;
+mod ws;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,6 +17,9 @@ pub struct AppState {
     pub ble_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub stop_flag: Arc<AtomicBool>,
     pub beat_toggle: Arc<AtomicBool>,
+    pub ws_broadcaster: Arc<ws::WsBroadcaster>,
+    pub ws_enabled: Arc<AtomicBool>,
+    pub ws_port: Arc<Mutex<u16>>,
 }
 
 #[tauri::command]
@@ -44,11 +48,13 @@ async fn connect_device(
     let osc_params = state.osc_params.clone();
     let stop = state.stop_flag.clone();
     let beat_toggle = state.beat_toggle.clone();
+    let ws_bc = state.ws_broadcaster.clone();
+    let ws_enabled = state.ws_enabled.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = ble::connect_and_subscribe(
             &device_id, hr, connected, osc_enabled, osc_port, osc_params, beat_toggle,
-            app.clone(), stop,
+            ws_bc, ws_enabled, app.clone(), stop,
         )
         .await
         {
@@ -111,7 +117,35 @@ fn set_osc_params(state: State<'_, AppState>, params: osc::OscParamNames) {
     *state.osc_params.lock().unwrap() = params;
 }
 
+#[tauri::command]
+fn set_ws_enabled(state: State<'_, AppState>, enabled: bool) {
+    state.ws_enabled.store(enabled, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn get_ws_enabled(state: State<'_, AppState>) -> bool {
+    state.ws_enabled.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_ws_port(state: State<'_, AppState>, port: u16) {
+    *state.ws_port.lock().unwrap() = port;
+}
+
+#[tauri::command]
+fn get_ws_port(state: State<'_, AppState>) -> u16 {
+    *state.ws_port.lock().unwrap()
+}
+
 fn main() {
+    let ws_broadcaster = Arc::new(ws::WsBroadcaster::new());
+
+    let bc = ws_broadcaster.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(ws::start_server(9100, bc));
+    });
+
     tauri::Builder::default()
         .manage(AppState {
             heart_rate: Arc::new(Mutex::new(0)),
@@ -122,6 +156,9 @@ fn main() {
             ble_handle: Arc::new(Mutex::new(None)),
             stop_flag: Arc::new(AtomicBool::new(false)),
             beat_toggle: Arc::new(AtomicBool::new(false)),
+            ws_broadcaster,
+            ws_enabled: Arc::new(AtomicBool::new(true)),
+            ws_port: Arc::new(Mutex::new(9100)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -135,6 +172,10 @@ fn main() {
             get_osc_enabled,
             get_osc_params,
             set_osc_params,
+            set_ws_enabled,
+            get_ws_enabled,
+            set_ws_port,
+            get_ws_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

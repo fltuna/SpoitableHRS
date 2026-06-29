@@ -143,6 +143,8 @@ pub async fn connect_and_subscribe(
     osc_port: Arc<Mutex<u16>>,
     osc_params: Arc<Mutex<crate::osc::OscParamNames>>,
     beat_toggle: Arc<AtomicBool>,
+    ws_broadcaster: Arc<crate::ws::WsBroadcaster>,
+    ws_enabled: Arc<AtomicBool>,
     app: tauri::AppHandle,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -250,6 +252,12 @@ pub async fn connect_and_subscribe(
             if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
                 emit_log(&app, &format!("OSC send error: {e}"), "error");
             }
+        }
+
+        if ws_enabled.load(Ordering::Relaxed) {
+            let zone = if hr >= 140 { "hard" } else if hr >= 120 { "moderate" } else if hr >= 100 { "light" } else { "rest" };
+            let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true}}"#);
+            ws_broadcaster.send(&json);
         }
     }
 
