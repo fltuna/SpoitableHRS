@@ -2,6 +2,7 @@
 name = "spoitable-hrs"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
