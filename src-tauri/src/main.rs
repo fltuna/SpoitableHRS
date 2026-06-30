@@ -220,7 +220,9 @@ async fn debug_updater(app: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_updater::UpdaterExt;
     let version = app.config().version.clone().unwrap_or_default();
     let target = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
+    let pkg_version = app.package_info().version.to_string();
     let mut log = format!("app version: {version}\n");
+    log.push_str(&format!("package_info version: {pkg_version}\n"));
     log.push_str(&format!("tauri target: {target}\n"));
 
     let url = format!("https://spoitable.update.f2a.dev/update/{target}/{version}");
@@ -229,7 +231,10 @@ async fn debug_updater(app: tauri::AppHandle) -> Result<String, String> {
     // Manual reqwest with same URL
     match reqwest::get(&url).await {
         Ok(resp) => {
-            log.push_str(&format!("manual fetch: HTTP {}\n", resp.status().as_u16()));
+            let status = resp.status().as_u16();
+            let body = resp.text().await.unwrap_or_default();
+            log.push_str(&format!("manual fetch: HTTP {status}\n"));
+            log.push_str(&format!("response body: {}\n", &body[..body.len().min(200)]));
         }
         Err(e) => {
             log.push_str(&format!("manual fetch error: {e}\n"));

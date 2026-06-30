@@ -25,7 +25,8 @@ export default {
     }
 
     const [, target, currentVersion] = match;
-    console.log(`[update] target=${target} current=${currentVersion} ua=${request.headers.get("user-agent") || "none"}`);
+    const logEntry = `${new Date().toISOString()} target=${target} ver=${currentVersion} ua=${request.headers.get("user-agent") || "none"}`;
+    await env.UPDATES.put("_debug_log", logEntry);
 
     const latest = await env.UPDATES.get("latest", "json");
     if (!latest) {
@@ -48,8 +49,12 @@ export default {
       version: latest.version,
       notes: latest.notes || "",
       pub_date: latest.pub_date || new Date().toISOString(),
-      url: platform.url,
-      signature: platform.signature,
+      platforms: {
+        [target]: {
+          url: platform.url,
+          signature: platform.signature,
+        },
+      },
     }, { headers: CORS });
   },
 };

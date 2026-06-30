@@ -618,9 +618,10 @@ async function checkForUpdates() {
 
     // Fallback: reqwest via Rust
     const result = await invoke("check_update");
-    if (result) {
+    if (result && result.version) {
+      const platform = result.platforms?.["windows-x86_64"] || {};
       addLog(`Update available: v${result.version}`, "info");
-      pendingUpdate = result;
+      pendingUpdate = { version: result.version, url: platform.url || result.url, ...result };
       useTauriUpdater = false;
       updateState = "available";
     } else {
