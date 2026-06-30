@@ -216,6 +216,37 @@ fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn debug_updater(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let version = app.config().version.clone().unwrap_or_default();
+    let mut log = format!("app version: {version}\n");
+
+    match app.updater() {
+        Ok(updater) => {
+            log.push_str("updater created OK\n");
+            match updater.check().await {
+                Ok(Some(update)) => {
+                    log.push_str(&format!(
+                        "update found: version={} date={:?} body={:?}\n",
+                        update.version, update.date, update.body
+                    ));
+                }
+                Ok(None) => {
+                    log.push_str("updater returned None (no update)\n");
+                }
+                Err(e) => {
+                    log.push_str(&format!("updater check error: {e}\n"));
+                }
+            }
+        }
+        Err(e) => {
+            log.push_str(&format!("updater creation error: {e}\n"));
+        }
+    }
+    Ok(log)
+}
+
+#[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
     let version = app.config().version.clone().unwrap_or_default();
     let url = format!(
@@ -318,6 +349,7 @@ fn main() {
             set_language,
             get_language,
             check_update,
+            debug_updater,
             open_url,
         ])
         .build(tauri::generate_context!())

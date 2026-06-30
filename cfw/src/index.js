@@ -25,11 +25,15 @@ export default {
     }
 
     const [, target, currentVersion] = match;
+    console.log(`[update] target=${target} current=${currentVersion} ua=${request.headers.get("user-agent") || "none"}`);
 
     const latest = await env.UPDATES.get("latest", "json");
     if (!latest) {
+      console.log("[update] no latest in KV");
       return new Response(null, { status: 204, headers: CORS });
     }
+
+    console.log(`[update] latest=${latest.version} isNewer=${isNewer(latest.version, currentVersion)}`);
 
     if (latest.version === currentVersion || !isNewer(latest.version, currentVersion)) {
       return new Response(null, { status: 204, headers: CORS });

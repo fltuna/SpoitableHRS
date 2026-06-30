@@ -592,6 +592,14 @@ async function checkForUpdates() {
     updateBtnText();
     addLog("Checking for updates...", "info");
 
+    // Debug: call Rust-side updater directly for diagnostics
+    try {
+      const debugLog = await invoke("debug_updater");
+      debugLog.trim().split("\n").forEach(line => addLog(`[updater] ${line}`, "info"));
+    } catch (e) {
+      addLog(`[updater debug] ${e}`, "info");
+    }
+
     // Try Tauri updater plugin first
     try {
       const metadata = await invoke("plugin:updater|check", { headers: [] });
