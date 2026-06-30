@@ -235,6 +235,21 @@ async fn debug_updater(app: tauri::AppHandle) -> Result<String, String> {
             let body = resp.text().await.unwrap_or_default();
             log.push_str(&format!("manual fetch: HTTP {status}\n"));
             log.push_str(&format!("response body: {}\n", &body[..body.len().min(200)]));
+
+            // Manual version comparison
+            if status == 200 {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(remote_ver) = json["version"].as_str() {
+                        match (semver::Version::parse(remote_ver), semver::Version::parse(&version)) {
+                            (Ok(remote), Ok(current)) => {
+                                log.push_str(&format!("semver: remote={remote} current={current} newer={}\n", remote > current));
+                            }
+                            (Err(e1), _) => log.push_str(&format!("semver parse remote failed: {e1}\n")),
+                            (_, Err(e2)) => log.push_str(&format!("semver parse current failed: {e2}\n")),
+                        }
+                    }
+                }
+            }
         }
         Err(e) => {
             log.push_str(&format!("manual fetch error: {e}\n"));
@@ -264,6 +279,100 @@ async fn debug_updater(app: tauri::AppHandle) -> Result<String, String> {
         }
     }
     Ok(log)
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: tauri::AppHandle,
+    url: String,
+    signature: String,
+) -> Result<(), String> {
+    let resp = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", resp.status().as_u16()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    let pubkey_b64 = app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|u| u.get("pubkey"))
+        .and_then(|v| v.as_str())
+        .ok_or("No updater pubkey in config")?
+        .to_string();
+
+    let pubkey_decoded = String::from_utf8(
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &pubkey_b64)
+            .map_err(|e| format!("pubkey decode: {e}"))?,
+    )
+    .map_err(|e| format!("pubkey utf8: {e}"))?;
+
+    let pk = minisign_verify::PublicKey::from_base64(
+        pubkey_decoded
+            .lines()
+            .find(|l| !l.starts_with("untrusted comment:"))
+            .ok_or("Invalid pubkey format")?,
+    )
+    .map_err(|e| format!("pubkey parse: {e}"))?;
+
+    let sig_decoded = String::from_utf8(
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature)
+            .map_err(|e| format!("sig base64 decode: {e}"))?,
+    )
+    .map_err(|e| format!("sig utf8: {e}"))?;
+
+    let sig = minisign_verify::Signature::decode(&sig_decoded)
+        .map_err(|e| format!("sig decode: {e}"))?;
+
+    pk.verify(&bytes, &sig, false)
+        .map_err(|e| format!("Signature verification failed: {e}"))?;
+
+    let temp_dir = std::env::temp_dir();
+    let installer_path = temp_dir.join("SpoitableHRS-update-setup.exe");
+    std::fs::write(&installer_path, &bytes).map_err(|e| e.to_string())?;
+
+    {
+        use tauri::Manager;
+        let state = app.state::<AppState>();
+        if *state.osc_enabled.lock().unwrap() {
+            let port = *state.osc_port.lock().unwrap();
+            let params = state.osc_params.lock().unwrap().clone();
+            let _ = osc::send_hr_params(port, &params, &osc::HrState {
+                hr: 0, is_connected: false, is_active: false, beat_toggle: false,
+            });
+        }
+        save_config(&state);
+    }
+
+    let app_exe = dirs::data_local_dir()
+        .unwrap()
+        .join("SpoitableHRS\\spoitable-hrs.exe");
+
+    let bat_path = temp_dir.join("spoitable-update.cmd");
+    std::fs::write(
+        &bat_path,
+        format!(
+            "@echo off\r\n\
+             \"{installer}\" /S\r\n\
+             timeout /t 3 /nobreak >nul\r\n\
+             start \"\" \"{app}\"\r\n\
+             del \"%~f0\"\r\n",
+            installer = installer_path.display(),
+            app = app_exe.display(),
+        ),
+    )
+    .map_err(|e| e.to_string())?;
+
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("cmd")
+        .args(["/c", &bat_path.to_string_lossy().to_string()])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    std::process::exit(0);
 }
 
 #[tauri::command]
@@ -369,6 +478,7 @@ fn main() {
             set_language,
             get_language,
             check_update,
+            download_and_install_update,
             debug_updater,
             open_url,
         ])

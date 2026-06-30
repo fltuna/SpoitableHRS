@@ -592,37 +592,15 @@ async function checkForUpdates() {
     updateBtnText();
     addLog("Checking for updates...", "info");
 
-    // Debug: call Rust-side updater directly for diagnostics
-    try {
-      const debugLog = await invoke("debug_updater");
-      debugLog.trim().split("\n").forEach(line => addLog(`[updater] ${line}`, "info"));
-    } catch (e) {
-      addLog(`[updater debug] ${e}`, "info");
-    }
-
-    // Try Tauri updater plugin first
-    try {
-      const metadata = await invoke("plugin:updater|check", { headers: [] });
-      addLog(`Tauri updater result: ${JSON.stringify(metadata)}`, "info");
-      if (metadata && metadata.version) {
-        addLog(`Update available: v${metadata.version}`, "info");
-        pendingUpdate = metadata;
-        useTauriUpdater = true;
-        updateState = "available";
-        updateBtnText();
-        return;
-      }
-    } catch (e) {
-      addLog(`Tauri updater: ${e}`, "info");
-    }
-
-    // Fallback: reqwest via Rust
     const result = await invoke("check_update");
     if (result && result.version) {
       const platform = result.platforms?.["windows-x86_64"] || {};
       addLog(`Update available: v${result.version}`, "info");
-      pendingUpdate = { version: result.version, url: platform.url || result.url, ...result };
-      useTauriUpdater = false;
+      pendingUpdate = {
+        version: result.version,
+        url: platform.url || result.url,
+        signature: platform.signature || result.signature,
+      };
       updateState = "available";
     } else {
       updateState = "uptodate";
@@ -636,47 +614,20 @@ async function checkForUpdates() {
 }
 
 document.getElementById("updateBtn").addEventListener("click", async () => {
-  if (!pendingUpdate) return;
+  if (!pendingUpdate || !pendingUpdate.url) return;
   updateState = "updating";
   updateBtnText();
+  addLog("Downloading and installing update...", "info");
 
-  if (useTauriUpdater) {
-    try {
-      addLog("Downloading and installing update...", "info");
-      const channel = new Channel();
-      channel.onmessage = (event) => {
-        switch (event.event) {
-          case "Started":
-            if (event.data.contentLength) {
-              addLog(`Download started (${Math.round(event.data.contentLength / 1024)} KB)`);
-            }
-            break;
-          case "Finished":
-            addLog("Download complete, installing...");
-            break;
-        }
-      };
-      await invoke("plugin:updater|download_and_install", {
-        onEvent: channel,
-        rid: pendingUpdate.rid,
-      });
-      addLog("Update installed. Restarting...", "info");
-      await invoke("plugin:process|restart");
-    } catch (e) {
-      addLog(`Update failed: ${e}`, "error");
-      updateState = "failed";
-      updateBtnText();
-    }
-  } else {
-    try {
-      await invoke("open_url", { url: pendingUpdate.url });
-      updateState = "downloaded";
-      updateBtnText();
-    } catch (e) {
-      addLog(`Update failed: ${e}`, "error");
-      updateState = "failed";
-      updateBtnText();
-    }
+  try {
+    await invoke("download_and_install_update", {
+      url: pendingUpdate.url,
+      signature: pendingUpdate.signature,
+    });
+  } catch (e) {
+    addLog(`Update failed: ${e}`, "error");
+    updateState = "failed";
+    updateBtnText();
   }
 });
 
