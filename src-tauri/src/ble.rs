@@ -231,6 +231,32 @@ pub async fn connect_and_subscribe(
     *connected.lock().unwrap() = true;
     let _ = app.emit("connection-changed", true);
 
+    // Beat loop: toggles is_hr_beat at a steady rhythm based on current HR
+    let beat_hr = heart_rate.clone();
+    let beat_flag = beat_toggle.clone();
+    let beat_osc_enabled = osc_enabled.clone();
+    let beat_osc_port = osc_port.clone();
+    let beat_osc_params = osc_params.clone();
+    let beat_stop = stop_flag.clone();
+    let beat_task = tokio::spawn(async move {
+        loop {
+            if beat_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            let hr = *beat_hr.lock().unwrap();
+            if hr > 0 && *beat_osc_enabled.lock().unwrap() {
+                let interval_ms = (60_000u64).checked_div(hr as u64).unwrap_or(750);
+                let toggle = beat_flag.fetch_xor(true, Ordering::Relaxed);
+                let port = *beat_osc_port.lock().unwrap();
+                let param = beat_osc_params.lock().unwrap().is_hr_beat.clone();
+                let _ = crate::osc::send_beat(port, &param, !toggle);
+                tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
+            } else {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        }
+    });
+
     let mut hr_sum: u64 = 0;
     let mut hr_count: u64 = 0;
     let mut hr_min: u16 = u16::MAX;
@@ -253,12 +279,11 @@ pub async fn connect_and_subscribe(
         if *osc_enabled.lock().unwrap() {
             let port = *osc_port.lock().unwrap();
             let params = osc_params.lock().unwrap().clone();
-            let toggle = beat_toggle.fetch_xor(true, Ordering::Relaxed);
             let state = crate::osc::HrState {
                 hr,
                 is_connected: true,
                 is_active: hr > 0,
-                beat_toggle: toggle,
+                beat_toggle: beat_toggle.load(Ordering::Relaxed),
             };
             if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
                 emit_log(&app, &format!("OSC send error: {e}"), "error");
@@ -272,6 +297,7 @@ pub async fn connect_and_subscribe(
         }
     }
 
+    beat_task.abort();
     emit_log(&app, "Broadcast receiver stopped", "info");
     *connected.lock().unwrap() = false;
     let _ = app.emit("connection-changed", false);

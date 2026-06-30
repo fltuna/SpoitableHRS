@@ -99,3 +99,15 @@ pub fn send_hr_params(
 
     Ok(())
 }
+
+pub fn send_beat(port: u16, param_name: &str, beat: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    let addr = format!("127.0.0.1:{port}");
+    let msg = OscMessage {
+        addr: format!("/avatar/parameters/{param_name}"),
+        args: vec![OscType::Bool(beat)],
+    };
+    let buf = rosc::encoder::encode(&OscPacket::Message(msg))?;
+    socket.send_to(&buf, &addr)?;
+    Ok(())
+}
