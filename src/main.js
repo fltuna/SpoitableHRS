@@ -269,6 +269,15 @@ deviceModal.addEventListener("click", (e) => {
 });
 
 // ── Events ──
+let graphDrawInterval = null;
+
+function startGraphLoop(intervalMs) {
+  if (graphDrawInterval) clearInterval(graphDrawInterval);
+  graphDrawInterval = setInterval(() => {
+    if (isConnected && hrHistory.length >= 2) drawGraph();
+  }, intervalMs);
+}
+
 listen("heart-rate-update", (event) => {
   const hr = event.payload;
   bpmEl.textContent = hr;
@@ -278,7 +287,6 @@ listen("heart-rate-update", (event) => {
 
   hrHistory.push(hr);
   if (hrHistory.length > MAX_POINTS) hrHistory.shift();
-  drawGraph();
 });
 
 listen("connection-changed", (event) => {
@@ -397,6 +405,7 @@ document.getElementById("graphInterval").addEventListener("change", () => {
   const val = parseInt(document.getElementById("graphInterval").value, 10);
   if (val >= 100 && val <= 5000) {
     invoke("set_graph_interval", { interval: val });
+    startGraphLoop(val);
     addLog(`Graph interval: ${val}ms`);
   }
 });
@@ -534,6 +543,7 @@ async function loadAllSettings() {
 
   const graphInt = await invoke("get_graph_interval");
   document.getElementById("graphInterval").value = graphInt;
+  startGraphLoop(graphInt);
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;
