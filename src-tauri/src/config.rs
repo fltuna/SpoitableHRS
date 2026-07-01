@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub always_on_top: bool,
     pub start_minimized: bool,
     pub language: String,
+    #[serde(default = "default_graph_interval")]
+    pub graph_interval_ms: u64,
 }
 
 impl Default for AppConfig {
@@ -26,8 +28,13 @@ impl Default for AppConfig {
             always_on_top: false,
             start_minimized: false,
             language: detect_os_language(),
+            graph_interval_ms: default_graph_interval(),
         }
     }
+}
+
+fn default_graph_interval() -> u64 {
+    800
 }
 
 fn detect_os_language() -> String {

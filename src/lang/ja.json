@@ -33,6 +33,7 @@
   "settings.alwaysOnTop": "常に最前面",
   "settings.startMinimized": "最小化で起動",
   "settings.language": "言語",
+  "settings.graphInterval": "グラフ更新間隔",
   "settings.aboutHeader": "このアプリについて",
   "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
   "settings.checkingUpdate": "更新を確認中...",

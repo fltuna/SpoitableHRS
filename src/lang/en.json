@@ -33,6 +33,7 @@
   "settings.alwaysOnTop": "Always on top",
   "settings.startMinimized": "Start minimized",
   "settings.language": "Language",
+  "settings.graphInterval": "Graph update interval",
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
   "settings.checkingUpdate": "Checking for updates...",

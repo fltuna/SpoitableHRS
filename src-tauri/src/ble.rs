@@ -145,6 +145,7 @@ pub async fn connect_and_subscribe(
     beat_toggle: Arc<AtomicBool>,
     ws_broadcaster: Arc<crate::ws::WsBroadcaster>,
     ws_enabled: Arc<AtomicBool>,
+    graph_interval_ms: Arc<Mutex<u64>>,
     app: tauri::AppHandle,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -231,13 +232,19 @@ pub async fn connect_and_subscribe(
     *connected.lock().unwrap() = true;
     let _ = app.emit("connection-changed", true);
 
-    // Beat loop: toggles is_hr_beat at a steady rhythm based on current HR
+    let hr_sum: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let hr_count: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    let hr_min: Arc<Mutex<u16>> = Arc::new(Mutex::new(u16::MAX));
+    let hr_max: Arc<Mutex<u16>> = Arc::new(Mutex::new(0));
+
+    // Beat loop: toggles is_hr_beat + sends all OSC params at HR-derived interval
     let beat_hr = heart_rate.clone();
     let beat_flag = beat_toggle.clone();
     let beat_osc_enabled = osc_enabled.clone();
     let beat_osc_port = osc_port.clone();
     let beat_osc_params = osc_params.clone();
     let beat_stop = stop_flag.clone();
+    let beat_app = app.clone();
     let beat_task = tokio::spawn(async move {
         loop {
             if beat_stop.load(Ordering::Relaxed) {
@@ -246,10 +253,18 @@ pub async fn connect_and_subscribe(
             let hr = *beat_hr.lock().unwrap();
             if hr > 0 && *beat_osc_enabled.lock().unwrap() {
                 let interval_ms = (60_000u64).checked_div(hr as u64).unwrap_or(750);
-                let toggle = beat_flag.fetch_xor(true, Ordering::Relaxed);
+                let toggle = !beat_flag.fetch_xor(true, Ordering::Relaxed);
                 let port = *beat_osc_port.lock().unwrap();
-                let param = beat_osc_params.lock().unwrap().is_hr_beat.clone();
-                let _ = crate::osc::send_beat(port, &param, !toggle);
+                let params = beat_osc_params.lock().unwrap().clone();
+                let state = crate::osc::HrState {
+                    hr,
+                    is_connected: true,
+                    is_active: true,
+                    beat_toggle: toggle,
+                };
+                if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
+                    emit_log(&beat_app, &format!("OSC send error: {e}"), "error");
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
             } else {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -257,47 +272,53 @@ pub async fn connect_and_subscribe(
         }
     });
 
-    let mut hr_sum: u64 = 0;
-    let mut hr_count: u64 = 0;
-    let mut hr_min: u16 = u16::MAX;
-    let mut hr_max: u16 = 0;
+    // WS broadcast loop: sends overlay data at configurable interval
+    let ws_hr = heart_rate.clone();
+    let ws_sum = hr_sum.clone();
+    let ws_count = hr_count.clone();
+    let ws_min = hr_min.clone();
+    let ws_max = hr_max.clone();
+    let ws_stop = stop_flag.clone();
+    let ws_interval = graph_interval_ms;
+    let ws_task = tokio::spawn(async move {
+        loop {
+            if ws_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            if ws_enabled.load(Ordering::Relaxed) {
+                let hr = *ws_hr.lock().unwrap();
+                if hr > 0 {
+                    let count = *ws_count.lock().unwrap();
+                    let avg = if count > 0 { (*ws_sum.lock().unwrap() / count) as u16 } else { hr };
+                    let mn = *ws_min.lock().unwrap();
+                    let mx = *ws_max.lock().unwrap();
+                    let zone = if hr >= 140 { "hard" } else if hr >= 120 { "moderate" } else if hr >= 100 { "light" } else { "rest" };
+                    let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{avg},"min":{mn},"max":{mx}}}"#);
+                    ws_broadcaster.send(&json);
+                }
+            }
+            let interval = *ws_interval.lock().unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
+        }
+    });
 
+    // BLE receive loop: update shared state + emit UI event
     while let Some(hr) = rx.recv().await {
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
 
-        hr_sum += hr as u64;
-        hr_count += 1;
-        if hr < hr_min { hr_min = hr; }
-        if hr > hr_max { hr_max = hr; }
-        let hr_avg = (hr_sum / hr_count) as u16;
+        *hr_sum.lock().unwrap() += hr as u64;
+        *hr_count.lock().unwrap() += 1;
+        if hr < *hr_min.lock().unwrap() { *hr_min.lock().unwrap() = hr; }
+        if hr > *hr_max.lock().unwrap() { *hr_max.lock().unwrap() = hr; }
 
         *heart_rate.lock().unwrap() = hr;
         let _ = app.emit("heart-rate-update", hr);
-
-        if *osc_enabled.lock().unwrap() {
-            let port = *osc_port.lock().unwrap();
-            let params = osc_params.lock().unwrap().clone();
-            let state = crate::osc::HrState {
-                hr,
-                is_connected: true,
-                is_active: hr > 0,
-                beat_toggle: beat_toggle.load(Ordering::Relaxed),
-            };
-            if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
-                emit_log(&app, &format!("OSC send error: {e}"), "error");
-            }
-        }
-
-        if ws_enabled.load(Ordering::Relaxed) {
-            let zone = if hr >= 140 { "hard" } else if hr >= 120 { "moderate" } else if hr >= 100 { "light" } else { "rest" };
-            let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{hr_avg},"min":{hr_min},"max":{hr_max}}}"#);
-            ws_broadcaster.send(&json);
-        }
     }
 
     beat_task.abort();
+    ws_task.abort();
     emit_log(&app, "Broadcast receiver stopped", "info");
     *connected.lock().unwrap() = false;
     let _ = app.emit("connection-changed", false);

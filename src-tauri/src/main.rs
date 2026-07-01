@@ -24,6 +24,7 @@ pub struct AppState {
     pub always_on_top: Arc<AtomicBool>,
     pub start_minimized: Arc<AtomicBool>,
     pub language: Arc<Mutex<String>>,
+    pub graph_interval_ms: Arc<Mutex<u64>>,
 }
 
 fn save_config(state: &AppState) {
@@ -36,6 +37,7 @@ fn save_config(state: &AppState) {
         always_on_top: state.always_on_top.load(Ordering::Relaxed),
         start_minimized: state.start_minimized.load(Ordering::Relaxed),
         language: state.language.lock().unwrap().clone(),
+        graph_interval_ms: *state.graph_interval_ms.lock().unwrap(),
     };
     config::save(&cfg);
 }
@@ -68,11 +70,12 @@ async fn connect_device(
     let beat_toggle = state.beat_toggle.clone();
     let ws_bc = state.ws_broadcaster.clone();
     let ws_enabled = state.ws_enabled.clone();
+    let graph_interval = state.graph_interval_ms.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = ble::connect_and_subscribe(
             &device_id, hr, connected, osc_enabled, osc_port, osc_params, beat_toggle,
-            ws_bc, ws_enabled, app.clone(), stop,
+            ws_bc, ws_enabled, graph_interval, app.clone(), stop,
         )
         .await
         {
@@ -204,6 +207,18 @@ fn set_language(state: State<'_, AppState>, language: String) {
 #[tauri::command]
 fn get_language(state: State<'_, AppState>) -> String {
     state.language.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_graph_interval(state: State<'_, AppState>, interval: u64) {
+    let clamped = interval.clamp(100, 5000);
+    *state.graph_interval_ms.lock().unwrap() = clamped;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_graph_interval(state: State<'_, AppState>) -> u64 {
+    *state.graph_interval_ms.lock().unwrap()
 }
 
 #[tauri::command]
@@ -457,6 +472,7 @@ fn main() {
             always_on_top: Arc::new(AtomicBool::new(cfg.always_on_top)),
             start_minimized: Arc::new(AtomicBool::new(cfg.start_minimized)),
             language: Arc::new(Mutex::new(cfg.language)),
+            graph_interval_ms: Arc::new(Mutex::new(cfg.graph_interval_ms)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -480,6 +496,8 @@ fn main() {
             get_start_minimized,
             set_language,
             get_language,
+            set_graph_interval,
+            get_graph_interval,
             check_update,
             download_and_install_update,
             debug_updater,

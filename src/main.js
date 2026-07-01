@@ -393,6 +393,14 @@ document.getElementById("startMinToggle").addEventListener("click", () => {
   addLog(`Start minimized: ${enabled ? "on" : "off"}`);
 });
 
+document.getElementById("graphInterval").addEventListener("change", () => {
+  const val = parseInt(document.getElementById("graphInterval").value, 10);
+  if (val >= 100 && val <= 5000) {
+    invoke("set_graph_interval", { interval: val });
+    addLog(`Graph interval: ${val}ms`);
+  }
+});
+
 document.getElementById("langSelect").addEventListener("change", async (e) => {
   const code = e.target.value;
   await loadLang(code);
@@ -523,6 +531,9 @@ async function loadAllSettings() {
 
   const sm = await invoke("get_start_minimized");
   document.getElementById("startMinToggle").dataset.checked = sm.toString();
+
+  const graphInt = await invoke("get_graph_interval");
+  document.getElementById("graphInterval").value = graphInt;
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;
