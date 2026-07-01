@@ -270,23 +270,25 @@ deviceModal.addEventListener("click", (e) => {
 
 // ── Events ──
 let graphDrawInterval = null;
+let latestHr = 0;
 
 function startGraphLoop(intervalMs) {
   if (graphDrawInterval) clearInterval(graphDrawInterval);
   graphDrawInterval = setInterval(() => {
-    if (isConnected && hrHistory.length >= 2) drawGraph();
+    if (isConnected && latestHr > 0) {
+      hrHistory.push(latestHr);
+      if (hrHistory.length > MAX_POINTS) hrHistory.shift();
+      drawGraph();
+    }
   }, intervalMs);
 }
 
 listen("heart-rate-update", (event) => {
-  const hr = event.payload;
-  bpmEl.textContent = hr;
-  const zone = getZone(hr);
+  latestHr = event.payload;
+  bpmEl.textContent = latestHr;
+  const zone = getZone(latestHr);
   hrZoneEl.textContent = zone.name;
   hrZoneEl.style.color = zone.color;
-
-  hrHistory.push(hr);
-  if (hrHistory.length > MAX_POINTS) hrHistory.shift();
 });
 
 listen("connection-changed", (event) => {
