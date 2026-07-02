@@ -16,6 +16,7 @@ reqwest = { version = "0.12", features = ["json"] }
 tauri-plugin-updater = "=2.5.1"
 tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
 semver = "1"
 minisign-verify = "0.2"
 base64 = "0.22"

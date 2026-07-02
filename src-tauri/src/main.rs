@@ -423,6 +423,14 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .setup(|app| {
             use tauri::Manager;
             use tauri::menu::{MenuBuilder, MenuItemBuilder};
