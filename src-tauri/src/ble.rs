@@ -9,6 +9,11 @@ use windows::Devices::Bluetooth::Advertisement::{
     BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementWatcher,
     BluetoothLEScanningMode,
 };
+use windows::Devices::Bluetooth::BluetoothLEDevice;
+use windows::Devices::Bluetooth::GenericAttributeProfile::{
+    GattCharacteristic, GattClientCharacteristicConfigurationDescriptorValue,
+    GattCommunicationStatus, GattValueChangedEventArgs,
+};
 use windows::Foundation::TypedEventHandler;
 use windows::Storage::Streams::DataReader;
 
@@ -135,6 +140,299 @@ pub async fn scan() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Send 
     Ok(result)
 }
 
+/// Try GATT connection. Returns Ok(true) if GATT is running, Ok(false) if it failed and we should fallback.
+fn try_gatt(
+    address: u64,
+    hr_tx: mpsc::UnboundedSender<u16>,
+    log_tx: mpsc::UnboundedSender<(String, String)>,
+    app: tauri::AppHandle,
+    stop: Arc<AtomicBool>,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let log = |msg: &str, level: &str| {
+        let _ = log_tx.send((msg.to_string(), level.to_string()));
+    };
+
+    log("[GATT] Attempting GATT connection...", "info");
+
+    let device = match BluetoothLEDevice::FromBluetoothAddressAsync(address)
+        .and_then(|op| op.get())
+    {
+        Ok(dev) => dev,
+        Err(e) => {
+            log(
+                &format!("[GATT] Device not reachable: {e}, falling back to broadcast"),
+                "warn",
+            );
+            return Ok(false);
+        }
+    };
+
+    let hrs_uuid = ble_uuid(0x180D);
+    let gatt_result = device
+        .GetGattServicesForUuidAsync(hrs_uuid)?
+        .get()?;
+
+    if gatt_result.Status()? != GattCommunicationStatus::Success {
+        log("[GATT] Cannot access HR Service, falling back to broadcast", "warn");
+        return Ok(false);
+    }
+
+    let services = gatt_result.Services()?;
+    if services.Size()? == 0 {
+        log("[GATT] HR Service not found, falling back to broadcast", "warn");
+        return Ok(false);
+    }
+
+    let hr_service = services.GetAt(0)?;
+    let hr_char_uuid = ble_uuid(0x2A37);
+    let char_result = hr_service
+        .GetCharacteristicsForUuidAsync(hr_char_uuid)?
+        .get()?;
+
+    if char_result.Status()? != GattCommunicationStatus::Success {
+        log("[GATT] Cannot access HR characteristic, falling back to broadcast", "warn");
+        return Ok(false);
+    }
+
+    let chars = char_result.Characteristics()?;
+    if chars.Size()? == 0 {
+        log("[GATT] HR characteristic not found, falling back to broadcast", "warn");
+        return Ok(false);
+    }
+
+    let hr_char = chars.GetAt(0)?;
+
+    // Enable notifications
+    let notify_status = hr_char
+        .WriteClientCharacteristicConfigurationDescriptorAsync(
+            GattClientCharacteristicConfigurationDescriptorValue::Notify,
+        )?
+        .get()?;
+
+    if notify_status != GattCommunicationStatus::Success {
+        log("[GATT] Failed to enable HR notifications, falling back to broadcast", "warn");
+        return Ok(false);
+    }
+
+    log("[GATT] Connected! Receiving HR via GATT", "info");
+
+    // Subscribe to HR notifications
+    let hr_tx_clone = hr_tx.clone();
+    let hr_handler =
+        TypedEventHandler::<GattCharacteristic, GattValueChangedEventArgs>::new(move |_, args| {
+            let Some(args) = &*args else { return Ok(()) };
+            let value = args.CharacteristicValue()?;
+            let reader = DataReader::FromBuffer(&value)?;
+            let len = reader.UnconsumedBufferLength()? as usize;
+            if len < 2 {
+                return Ok(());
+            }
+            let mut bytes = vec![0u8; len];
+            reader.ReadBytes(&mut bytes)?;
+
+            let hr = parse_hrs_measurement(&bytes);
+            if let Some(hr) = hr {
+                let _ = hr_tx_clone.send(hr);
+            }
+            Ok(())
+        });
+    hr_char.ValueChanged(&hr_handler)?;
+
+    // Try to read battery level
+    try_read_battery(&device, &log_tx, &app);
+
+    // Battery polling loop (every 60s)
+    let bat_device_addr = address;
+    let bat_log_tx = log_tx.clone();
+    let bat_app = app.clone();
+    let bat_stop = stop.clone();
+    std::thread::spawn(move || {
+        loop {
+            if bat_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            if bat_stop.load(Ordering::Relaxed) {
+                break;
+            }
+            // Re-read battery from existing device
+            if let Ok(dev) = BluetoothLEDevice::FromBluetoothAddressAsync(bat_device_addr)
+                .and_then(|op| op.get())
+            {
+                try_read_battery(&dev, &bat_log_tx, &bat_app);
+            }
+        }
+    });
+
+    // Wait until stopped
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    // Disable notifications
+    let _ = hr_char.WriteClientCharacteristicConfigurationDescriptorAsync(
+        GattClientCharacteristicConfigurationDescriptorValue::None,
+    );
+
+    log("[GATT] Disconnected", "info");
+    Ok(true)
+}
+
+fn try_read_battery(
+    device: &BluetoothLEDevice,
+    log_tx: &mpsc::UnboundedSender<(String, String)>,
+    app: &tauri::AppHandle,
+) {
+    let bat_uuid = ble_uuid(0x180F);
+    let bat_char_uuid = ble_uuid(0x2A19);
+
+    let Ok(bat_result) = device.GetGattServicesForUuidAsync(bat_uuid).and_then(|op| op.get())
+    else {
+        return;
+    };
+    if bat_result.Status().unwrap_or(GattCommunicationStatus::Unreachable)
+        != GattCommunicationStatus::Success
+    {
+        return;
+    }
+
+    let Ok(bat_services) = bat_result.Services() else {
+        return;
+    };
+    if bat_services.Size().unwrap_or(0) == 0 {
+        return;
+    }
+
+    let Ok(bat_service) = bat_services.GetAt(0) else {
+        return;
+    };
+    let Ok(char_result) = bat_service
+        .GetCharacteristicsForUuidAsync(bat_char_uuid)
+        .and_then(|op| op.get())
+    else {
+        return;
+    };
+    if char_result
+        .Status()
+        .unwrap_or(GattCommunicationStatus::Unreachable)
+        != GattCommunicationStatus::Success
+    {
+        return;
+    }
+
+    let Ok(chars) = char_result.Characteristics() else {
+        return;
+    };
+    if chars.Size().unwrap_or(0) == 0 {
+        return;
+    }
+
+    let Ok(bat_char) = chars.GetAt(0) else {
+        return;
+    };
+
+    if let Ok(read_result) = bat_char
+        .ReadValueAsync()
+        .and_then(|op| op.get())
+    {
+        if read_result
+            .Status()
+            .unwrap_or(GattCommunicationStatus::Unreachable)
+            == GattCommunicationStatus::Success
+        {
+            if let Ok(value) = read_result.Value() {
+                if let Ok(reader) = DataReader::FromBuffer(&value) {
+                    if reader.UnconsumedBufferLength().unwrap_or(0) >= 1 {
+                        if let Ok(level) = reader.ReadByte() {
+                            let _ = log_tx.send((
+                                format!("[GATT] Battery: {level}%"),
+                                "info".to_string(),
+                            ));
+                            let _ = app.emit("battery-update", level as u16);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn start_broadcast(
+    address: u64,
+    hr_tx: mpsc::UnboundedSender<u16>,
+    log_tx: mpsc::UnboundedSender<(String, String)>,
+    stop: Arc<AtomicBool>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let log = |msg: &str, level: &str| {
+        let _ = log_tx.send((msg.to_string(), level.to_string()));
+    };
+
+    log("[Broadcast] Starting broadcast mode...", "info");
+
+    let watcher = BluetoothLEAdvertisementWatcher::new()?;
+    watcher.SetScanningMode(BluetoothLEScanningMode::Active)?;
+
+    let hr_tx_clone = hr_tx.clone();
+    let log_tx_ref = log_tx.clone();
+    let first_packet = Arc::new(AtomicBool::new(true));
+
+    let handler = TypedEventHandler::<
+        BluetoothLEAdvertisementWatcher,
+        BluetoothLEAdvertisementReceivedEventArgs,
+    >::new(move |_, args| {
+        let Some(args) = &*args else { return Ok(()) };
+
+        if args.BluetoothAddress()? != address {
+            return Ok(());
+        }
+
+        let adv = args.Advertisement()?;
+        let mfr_data = adv.ManufacturerData()?;
+
+        for i in 0..mfr_data.Size()? {
+            let data = mfr_data.GetAt(i)?;
+            if data.CompanyId()? != POLAR_COMPANY_ID {
+                continue;
+            }
+
+            let buffer = data.Data()?;
+            let reader = DataReader::FromBuffer(&buffer)?;
+            let len = reader.UnconsumedBufferLength()? as usize;
+            let mut bytes = vec![0u8; len];
+            reader.ReadBytes(&mut bytes)?;
+
+            if first_packet.swap(false, Ordering::Relaxed) {
+                let hex: Vec<String> = bytes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, b)| format!("[{i}]{b:02X}"))
+                    .collect();
+                let _ = log_tx_ref.send((
+                    format!("[Broadcast] Data ({len} bytes): {}", hex.join(" ")),
+                    "info".to_string(),
+                ));
+            }
+
+            if let Some(hr) = parse_polar_broadcast(&bytes) {
+                let _ = hr_tx_clone.send(hr);
+            }
+        }
+        Ok(())
+    });
+
+    watcher.Received(&handler)?;
+    watcher.Start()?;
+    log("[Broadcast] Listening for HR broadcasts...", "info");
+
+    while !stop.load(Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    watcher.Stop()?;
+    log("[Broadcast] Receiver stopped", "info");
+    Ok(())
+}
+
 pub async fn connect_and_subscribe(
     device_id: &str,
     heart_rate: Arc<Mutex<u16>>,
@@ -162,71 +460,18 @@ pub async fn connect_and_subscribe(
     });
 
     let stop = stop_flag.clone();
+    let ble_log_tx = log_tx.clone();
+    let ble_hr_tx = hr_tx.clone();
+    let ble_app = app.clone();
     let _ble_task = tokio::task::spawn_blocking(move || {
-        let log = |msg: &str, level: &str| {
-            let _ = log_tx.send((msg.to_string(), level.to_string()));
-        };
-
-        log("Starting broadcast mode (no exclusive connection needed)...", "info");
-
-        let watcher = BluetoothLEAdvertisementWatcher::new()?;
-        watcher.SetScanningMode(BluetoothLEScanningMode::Active)?;
-
-        let hr_tx_clone = hr_tx.clone();
-        let log_tx_ref = log_tx.clone();
-        let first_packet = Arc::new(AtomicBool::new(true));
-
-        let handler = TypedEventHandler::<
-            BluetoothLEAdvertisementWatcher,
-            BluetoothLEAdvertisementReceivedEventArgs,
-        >::new(move |_, args| {
-            let Some(args) = &*args else { return Ok(()) };
-
-            if args.BluetoothAddress()? != address {
-                return Ok(());
+        // Try GATT first, fall back to broadcast
+        match try_gatt(address, ble_hr_tx.clone(), ble_log_tx.clone(), ble_app, stop.clone()) {
+            Ok(true) => {} // GATT ran and finished
+            Ok(false) | Err(_) => {
+                // Fallback to broadcast
+                let _ = start_broadcast(address, ble_hr_tx, ble_log_tx, stop);
             }
-
-            let adv = args.Advertisement()?;
-            let mfr_data = adv.ManufacturerData()?;
-
-            for i in 0..mfr_data.Size()? {
-                let data = mfr_data.GetAt(i)?;
-                if data.CompanyId()? != POLAR_COMPANY_ID {
-                    continue;
-                }
-
-                let buffer = data.Data()?;
-                let reader = DataReader::FromBuffer(&buffer)?;
-                let len = reader.UnconsumedBufferLength()? as usize;
-                let mut bytes = vec![0u8; len];
-                reader.ReadBytes(&mut bytes)?;
-
-                if first_packet.swap(false, Ordering::Relaxed) {
-                    let hex: Vec<String> = bytes.iter().enumerate().map(|(i, b)| format!("[{i}]{b:02X}")).collect();
-                    let _ = log_tx_ref.send((
-                        format!("Broadcast data ({len} bytes): {}", hex.join(" ")),
-                        "info".to_string(),
-                    ));
-                }
-
-                if let Some(hr) = parse_polar_broadcast(&bytes) {
-                    let _ = hr_tx_clone.send(hr);
-                }
-            }
-            Ok(())
-        });
-
-        watcher.Received(&handler)?;
-        watcher.Start()?;
-        log("Listening for HR broadcasts...", "info");
-
-        while !stop.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
         }
-
-        watcher.Stop()?;
-        log("Broadcast receiver stopped", "info");
-        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     });
 
     *connected.lock().unwrap() = true;
@@ -289,11 +534,25 @@ pub async fn connect_and_subscribe(
                 let hr = *ws_hr.lock().unwrap();
                 if hr > 0 {
                     let count = *ws_count.lock().unwrap();
-                    let avg = if count > 0 { (*ws_sum.lock().unwrap() / count) as u16 } else { hr };
+                    let avg = if count > 0 {
+                        (*ws_sum.lock().unwrap() / count) as u16
+                    } else {
+                        hr
+                    };
                     let mn = *ws_min.lock().unwrap();
                     let mx = *ws_max.lock().unwrap();
-                    let zone = if hr >= 140 { "hard" } else if hr >= 120 { "moderate" } else if hr >= 100 { "light" } else { "rest" };
-                    let json = format!(r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{avg},"min":{mn},"max":{mx}}}"#);
+                    let zone = if hr >= 140 {
+                        "hard"
+                    } else if hr >= 120 {
+                        "moderate"
+                    } else if hr >= 100 {
+                        "light"
+                    } else {
+                        "rest"
+                    };
+                    let json = format!(
+                        r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{avg},"min":{mn},"max":{mx}}}"#
+                    );
                     ws_broadcaster.send(&json);
                 }
             }
@@ -312,8 +571,12 @@ pub async fn connect_and_subscribe(
             Ok(Some(hr)) => {
                 *hr_sum.lock().unwrap() += hr as u64;
                 *hr_count.lock().unwrap() += 1;
-                if hr < *hr_min.lock().unwrap() { *hr_min.lock().unwrap() = hr; }
-                if hr > *hr_max.lock().unwrap() { *hr_max.lock().unwrap() = hr; }
+                if hr < *hr_min.lock().unwrap() {
+                    *hr_min.lock().unwrap() = hr;
+                }
+                if hr > *hr_max.lock().unwrap() {
+                    *hr_max.lock().unwrap() = hr;
+                }
 
                 *heart_rate.lock().unwrap() = hr;
                 let _ = app.emit("heart-rate-update", hr);
@@ -330,24 +593,48 @@ pub async fn connect_and_subscribe(
     if *osc_enabled.lock().unwrap() {
         let port = *osc_port.lock().unwrap();
         let params = osc_params.lock().unwrap().clone();
-        let _ = crate::osc::send_hr_params(port, &params, &crate::osc::HrState {
-            hr: 0, is_connected: false, is_active: false, beat_toggle: false,
-        });
+        let _ = crate::osc::send_hr_params(
+            port,
+            &params,
+            &crate::osc::HrState {
+                hr: 0,
+                is_connected: false,
+                is_active: false,
+                beat_toggle: false,
+            },
+        );
     }
 
     beat_task.abort();
     ws_task.abort();
     *heart_rate.lock().unwrap() = 0;
-    emit_log(&app, "Broadcast receiver stopped", "info");
+    emit_log(&app, "Connection ended", "info");
     *connected.lock().unwrap() = false;
     let _ = app.emit("connection-changed", false);
     log_task.abort();
     Ok(())
 }
 
+fn parse_hrs_measurement(data: &[u8]) -> Option<u16> {
+    if data.is_empty() {
+        return None;
+    }
+    let flags = data[0];
+    let hr_16bit = flags & 0x01 != 0;
+    if hr_16bit {
+        if data.len() < 3 {
+            return None;
+        }
+        Some(u16::from_le_bytes([data[1], data[2]]))
+    } else {
+        if data.len() < 2 {
+            return None;
+        }
+        Some(data[1] as u16)
+    }
+}
+
 fn parse_polar_broadcast(data: &[u8]) -> Option<u16> {
-    // Polar Verity Sense: HR is the last byte of manufacturer data
-    // Packet length varies (13, 16 bytes observed) but HR is always last
     if data.len() >= 10 {
         let hr = *data.last().unwrap() as u16;
         if hr >= 30 && hr <= 240 {
@@ -356,4 +643,3 @@ fn parse_polar_broadcast(data: &[u8]) -> Option<u16> {
     }
     None
 }
-
