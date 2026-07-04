@@ -303,22 +303,41 @@ pub async fn connect_and_subscribe(
     });
 
     // BLE receive loop: update shared state + emit UI event
-    while let Some(hr) = rx.recv().await {
+    // Timeout after 10s of no packets = device lost
+    loop {
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
+        match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+            Ok(Some(hr)) => {
+                *hr_sum.lock().unwrap() += hr as u64;
+                *hr_count.lock().unwrap() += 1;
+                if hr < *hr_min.lock().unwrap() { *hr_min.lock().unwrap() = hr; }
+                if hr > *hr_max.lock().unwrap() { *hr_max.lock().unwrap() = hr; }
 
-        *hr_sum.lock().unwrap() += hr as u64;
-        *hr_count.lock().unwrap() += 1;
-        if hr < *hr_min.lock().unwrap() { *hr_min.lock().unwrap() = hr; }
-        if hr > *hr_max.lock().unwrap() { *hr_max.lock().unwrap() = hr; }
+                *heart_rate.lock().unwrap() = hr;
+                let _ = app.emit("heart-rate-update", hr);
+            }
+            Ok(None) => break,
+            Err(_) => {
+                emit_log(&app, "No BLE signal for 10s — device lost", "warn");
+                break;
+            }
+        }
+    }
 
-        *heart_rate.lock().unwrap() = hr;
-        let _ = app.emit("heart-rate-update", hr);
+    // Send OSC reset on disconnect
+    if *osc_enabled.lock().unwrap() {
+        let port = *osc_port.lock().unwrap();
+        let params = osc_params.lock().unwrap().clone();
+        let _ = crate::osc::send_hr_params(port, &params, &crate::osc::HrState {
+            hr: 0, is_connected: false, is_active: false, beat_toggle: false,
+        });
     }
 
     beat_task.abort();
     ws_task.abort();
+    *heart_rate.lock().unwrap() = 0;
     emit_log(&app, "Broadcast receiver stopped", "info");
     *connected.lock().unwrap() = false;
     let _ = app.emit("connection-changed", false);
