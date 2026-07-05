@@ -294,6 +294,41 @@ listen("heart-rate-update", (event) => {
 listen("connection-changed", (event) => {
   isConnected = event.payload;
   updateConnectionUI();
+  if (!isConnected) {
+    document.getElementById("modeBanner").classList.add("hidden");
+    document.getElementById("batteryLevel").classList.add("hidden");
+  }
+});
+
+listen("connection-mode", (event) => {
+  const mode = event.payload;
+  const banner = document.getElementById("modeBanner");
+  const text = document.getElementById("modeBannerText");
+  banner.classList.remove("hidden", "gatt", "broadcast", "unsupported");
+  if (mode === "gatt") {
+    banner.classList.add("gatt");
+    text.textContent = t("mode.gatt");
+  } else if (mode === "unsupported") {
+    banner.classList.add("unsupported");
+    text.textContent = t("mode.unsupported");
+  } else {
+    banner.classList.add("broadcast");
+    text.textContent = t("mode.broadcast");
+  }
+});
+
+listen("battery-update", (event) => {
+  const level = event.payload;
+  const el = document.getElementById("batteryLevel");
+  el.textContent = `🔋 ${level}%`;
+  el.classList.remove("hidden");
+  if (level <= 20) {
+    el.style.color = "#e74c3c";
+  } else if (level <= 50) {
+    el.style.color = "#f39c12";
+  } else {
+    el.style.color = "#2ecc71";
+  }
 });
 
 listen("ble-log", (event) => {

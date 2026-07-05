@@ -215,6 +215,7 @@ fn try_gatt(
     }
 
     log("[GATT] Connected! Receiving HR via GATT", "info");
+    let _ = app.emit("connection-mode", "gatt");
 
     // Subscribe to HR notifications
     let hr_tx_clone = hr_tx.clone();
@@ -361,6 +362,7 @@ fn start_broadcast(
     address: u64,
     hr_tx: mpsc::UnboundedSender<u16>,
     log_tx: mpsc::UnboundedSender<(String, String)>,
+    app: tauri::AppHandle,
     stop: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let log = |msg: &str, level: &str| {
@@ -375,6 +377,9 @@ fn start_broadcast(
     let hr_tx_clone = hr_tx.clone();
     let log_tx_ref = log_tx.clone();
     let first_packet = Arc::new(AtomicBool::new(true));
+    let parse_fail_count = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let unsupported_warned = Arc::new(AtomicBool::new(false));
+    let app_ref = app.clone();
 
     let handler = TypedEventHandler::<
         BluetoothLEAdvertisementWatcher,
@@ -389,6 +394,7 @@ fn start_broadcast(
         let adv = args.Advertisement()?;
         let mfr_data = adv.ManufacturerData()?;
 
+        let mut matched = false;
         for i in 0..mfr_data.Size()? {
             let data = mfr_data.GetAt(i)?;
             if data.CompanyId()? != POLAR_COMPANY_ID {
@@ -415,8 +421,22 @@ fn start_broadcast(
 
             if let Some(hr) = parse_polar_broadcast(&bytes) {
                 let _ = hr_tx_clone.send(hr);
+                parse_fail_count.store(0, Ordering::Relaxed);
+                matched = true;
             }
         }
+
+        if !matched {
+            let fails = parse_fail_count.fetch_add(1, Ordering::Relaxed) + 1;
+            if fails >= 5 && !unsupported_warned.swap(true, Ordering::Relaxed) {
+                let _ = log_tx_ref.send((
+                    "[Broadcast] Unknown data pattern — device may not be supported".to_string(),
+                    "warn".to_string(),
+                ));
+                let _ = app_ref.emit("connection-mode", "unsupported");
+            }
+        }
+
         Ok(())
     });
 
@@ -440,7 +460,7 @@ pub async fn connect_and_subscribe(
     osc_enabled: Arc<Mutex<bool>>,
     osc_port: Arc<Mutex<u16>>,
     osc_params: Arc<Mutex<crate::osc::OscParamNames>>,
-    beat_toggle: Arc<AtomicBool>,
+    _beat_toggle: Arc<AtomicBool>,
     ws_broadcaster: Arc<crate::ws::WsBroadcaster>,
     ws_enabled: Arc<AtomicBool>,
     graph_interval_ms: Arc<Mutex<u64>>,
@@ -465,11 +485,11 @@ pub async fn connect_and_subscribe(
     let ble_app = app.clone();
     let _ble_task = tokio::task::spawn_blocking(move || {
         // Try GATT first, fall back to broadcast
-        match try_gatt(address, ble_hr_tx.clone(), ble_log_tx.clone(), ble_app, stop.clone()) {
-            Ok(true) => {} // GATT ran and finished
+        match try_gatt(address, ble_hr_tx.clone(), ble_log_tx.clone(), ble_app.clone(), stop.clone()) {
+            Ok(true) => {}
             Ok(false) | Err(_) => {
-                // Fallback to broadcast
-                let _ = start_broadcast(address, ble_hr_tx, ble_log_tx, stop);
+                let _ = ble_app.emit("connection-mode", "broadcast");
+                let _ = start_broadcast(address, ble_hr_tx, ble_log_tx, ble_app, stop);
             }
         }
     });
@@ -482,14 +502,14 @@ pub async fn connect_and_subscribe(
     let hr_min: Arc<Mutex<u16>> = Arc::new(Mutex::new(u16::MAX));
     let hr_max: Arc<Mutex<u16>> = Arc::new(Mutex::new(0));
 
-    // Beat loop: toggles is_hr_beat + sends all OSC params at HR-derived interval
+    // Beat loop: pulse is_hr_beat (ON 100ms → OFF) at HR-derived interval
     let beat_hr = heart_rate.clone();
-    let beat_flag = beat_toggle.clone();
     let beat_osc_enabled = osc_enabled.clone();
     let beat_osc_port = osc_port.clone();
     let beat_osc_params = osc_params.clone();
     let beat_stop = stop_flag.clone();
     let beat_app = app.clone();
+    const BEAT_PULSE_MS: u64 = 100;
     let beat_task = tokio::spawn(async move {
         loop {
             if beat_stop.load(Ordering::Relaxed) {
@@ -497,20 +517,30 @@ pub async fn connect_and_subscribe(
             }
             let hr = *beat_hr.lock().unwrap();
             if hr > 0 && *beat_osc_enabled.lock().unwrap() {
-                let interval_ms = (60_000u64).checked_div(hr as u64).unwrap_or(750);
-                let toggle = !beat_flag.fetch_xor(true, Ordering::Relaxed);
+                let cycle_ms = (60_000u64).checked_div(hr as u64).unwrap_or(750);
                 let port = *beat_osc_port.lock().unwrap();
                 let params = beat_osc_params.lock().unwrap().clone();
-                let state = crate::osc::HrState {
-                    hr,
-                    is_connected: true,
-                    is_active: true,
-                    beat_toggle: toggle,
+
+                // Beat ON
+                let state_on = crate::osc::HrState {
+                    hr, is_connected: true, is_active: true, beat_toggle: true,
                 };
-                if let Err(e) = crate::osc::send_hr_params(port, &params, &state) {
+                if let Err(e) = crate::osc::send_hr_params(port, &params, &state_on) {
                     emit_log(&beat_app, &format!("OSC send error: {e}"), "error");
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
+
+                // Hold ON for pulse duration
+                tokio::time::sleep(std::time::Duration::from_millis(BEAT_PULSE_MS)).await;
+
+                // Beat OFF
+                let state_off = crate::osc::HrState {
+                    hr, is_connected: true, is_active: true, beat_toggle: false,
+                };
+                let _ = crate::osc::send_hr_params(port, &params, &state_off);
+
+                // Wait remaining interval
+                let remaining = cycle_ms.saturating_sub(BEAT_PULSE_MS);
+                tokio::time::sleep(std::time::Duration::from_millis(remaining)).await;
             } else {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }

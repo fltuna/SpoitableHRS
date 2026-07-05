@@ -50,6 +50,10 @@
 
   "notification.minimized": "システムトレイに最小化しました。トレイアイコンをクリックで復元します。",
 
+  "mode.gatt": "GATT接続 — 高精度",
+  "mode.broadcast": "ブロードキャストモード — 精度が低下する可能性があります。GATT接続するには他の機器を切断してください。",
+  "mode.unsupported": "ブロードキャストモードに対応していません。GATT接続するには他の機器を切断してください。",
+
   "zone.rest": "安静ゾーン",
   "zone.light": "軽度ゾーン",
   "zone.moderate": "中度ゾーン",

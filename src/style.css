@@ -114,6 +114,15 @@ body {
   padding: 0 12px; margin-bottom: 10px;
 }
 .device-info-name, .device-info-id { font-size: 11px; color: #888; }
+.battery-level { font-size: 10px; color: #2ecc71; margin-left: 6px; }
+
+.mode-banner {
+  text-align: center; padding: 4px 12px; margin: 0 16px 4px;
+  border-radius: 6px; font-size: 11px;
+}
+.mode-banner.broadcast { background: rgba(243,156,18,0.12); color: #f39c12; }
+.mode-banner.gatt { background: rgba(46,204,113,0.12); color: #2ecc71; }
+.mode-banner.unsupported { background: rgba(231,76,60,0.12); color: #e74c3c; }
 
 .hr-graph { border-radius: 10px; overflow: hidden; height: 64px; }
 .hr-graph canvas { width: 100%; height: 100%; display: block; }

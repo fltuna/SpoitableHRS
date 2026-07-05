@@ -50,6 +50,10 @@
 
   "notification.minimized": "Minimized to system tray. Click the tray icon to restore.",
 
+  "mode.gatt": "GATT connected — full accuracy",
+  "mode.broadcast": "Broadcast mode — accuracy may be reduced. Disconnect other devices for GATT.",
+  "mode.unsupported": "Device not supported in broadcast mode. Disconnect other devices to enable GATT.",
+
   "zone.rest": "Rest Zone",
   "zone.light": "Light Zone",
   "zone.moderate": "Moderate Zone",
