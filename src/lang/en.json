@@ -61,7 +61,8 @@
   "stats.today": "Today",
   "stats.fullDay": "Full day",
   "stats.noData": "No data",
-  "stats.dragHint": "Drag to select a range · snaps to 15 min (hold Shift for 1 min)",
+  "stats.resetZoom": "Full range",
+  "stats.dragHint": "Drag to zoom · double-click to step back · right-click to reset (down to 1-second detail)",
 
   "notification.minimized": "Minimized to system tray. Click the tray icon to restore.",
 

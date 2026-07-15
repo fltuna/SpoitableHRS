@@ -61,7 +61,8 @@
   "stats.today": "今日",
   "stats.fullDay": "1日全体",
   "stats.noData": "データなし",
-  "stats.dragHint": "ドラッグで範囲選択 · 15分単位でスナップ(Shiftで1分単位)",
+  "stats.resetZoom": "全体表示",
+  "stats.dragHint": "ドラッグ=ズーム / ダブルクリック=1段戻る / 右クリック=全体(最大1秒単位まで)",
 
   "notification.minimized": "システムトレイに最小化しました。トレイアイコンをクリックで復元します。",
 

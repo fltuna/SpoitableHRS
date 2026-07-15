@@ -396,45 +396,35 @@ const statMinEl = document.getElementById("statMin");
 const statMaxEl = document.getElementById("statMax");
 const statAvgEl = document.getElementById("statAvg");
 const statRangeLabel = document.getElementById("statRangeLabel");
+const statsTooltip = document.getElementById("statsTooltip");
 
 let statsOpen = false;
-let statsData = []; // [{ t, bpm }]
-let statsFrom = 0;
+let statsData = []; // [{ t, bpm }] — the whole loaded day, ascending by t
+let statsFrom = 0; // full-day (data) bounds
 let statsTo = 0;
-let selStart = null; // snapped selection start (epoch ms)
-let selEnd = null; // snapped selection end (epoch ms)
-let rawStart = null; // un-snapped drag anchor
-let rawEnd = null;
+let viewFrom = 0; // currently visible window (zoom)
+let viewTo = 0;
+let zoomStack = []; // history of [from, to] for zoom-out
 let statsDragging = false;
 let statsMoved = false;
 let statsDownX = 0;
-let shiftHeld = false;
+let dragFromT = null; // pending zoom range (epoch ms) while dragging
+let dragToT = null;
+let hoverPoint = null; // nearest sample under the cursor (for the tooltip)
+let hoverRAF = 0;
+let lastHoverEvent = null;
 
 const STATS_PAD = { l: 34, r: 10, t: 12, b: 20 };
-const SNAP_COARSE_MS = 15 * 60 * 1000; // default snap: 15 min
-const SNAP_FINE_MS = 1 * 60 * 1000; // Shift held: 1 min
 const HOUR_MS = 60 * 60 * 1000;
+const MIN_ZOOM_MS = 10 * 1000; // deepest zoom ≈ 10 s → ~1-second granularity
 const dprOf = () => window.devicePixelRatio || 1;
 
-function snapFloor(tms, unit) {
-  return statsFrom + Math.floor((tms - statsFrom) / unit) * unit;
+function isZoomed() {
+  return viewFrom > statsFrom || viewTo < statsTo;
 }
-function snapCeil(tms, unit) {
-  return statsFrom + Math.ceil((tms - statsFrom) / unit) * unit;
-}
-// Snap the drag range outward to clean unit boundaries so it covers the drag.
-function applyStatsSnap() {
-  if (rawStart == null || rawEnd == null) {
-    selStart = null;
-    selEnd = null;
-    return;
-  }
-  const unit = shiftHeld ? SNAP_FINE_MS : SNAP_COARSE_MS;
-  const lo = Math.min(rawStart, rawEnd);
-  const hi = Math.max(rawStart, rawEnd);
-  selStart = Math.max(statsFrom, snapFloor(lo, unit));
-  selEnd = Math.min(statsTo, snapCeil(hi, unit));
-  if (selEnd <= selStart) selEnd = Math.min(statsTo, selStart + unit);
+function updateZoomBtn() {
+  const btn = document.getElementById("statsZoomOut");
+  if (btn) btn.hidden = !isZoomed();
 }
 
 function fmtDateInput(d) {
@@ -463,6 +453,15 @@ function currentDayRange() {
 function fmtClock(ms) {
   return new Date(ms).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
+function fmtClockSec(ms) {
+  return new Date(ms).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+// Axis tick label, precision chosen from the visible span.
+function fmtTick(ms, span) {
+  if (span >= 3 * HOUR_MS) return String(new Date(ms).getHours());
+  if (span >= 90 * 1000) return fmtClock(ms);
+  return fmtClockSec(ms);
+}
 
 async function toggleStats(force) {
   const next = force !== undefined ? force : !statsOpen;
@@ -484,11 +483,15 @@ async function toggleStats(force) {
 
 async function loadStats() {
   [statsFrom, statsTo] = currentDayRange();
-  selStart = null;
-  selEnd = null;
-  rawStart = null;
-  rawEnd = null;
+  viewFrom = statsFrom;
+  viewTo = statsTo;
+  zoomStack = [];
+  dragFromT = null;
+  dragToT = null;
   statsMoved = false;
+  hoverPoint = null;
+  hideStatsTooltip();
+  updateZoomBtn();
   try {
     statsData = (await invoke("read_hr_records", { from: statsFrom, to: statsTo })) || [];
   } catch (e) {
@@ -516,11 +519,8 @@ function computeStats(a, b) {
 }
 
 function updateStatTiles() {
-  const useSel = selStart != null && selEnd != null && Math.abs(selEnd - selStart) > 0;
-  const [a, b] = useSel
-    ? [Math.min(selStart, selEnd), Math.max(selStart, selEnd)]
-    : [statsFrom, statsTo];
-  const s = computeStats(a, b);
+  // Stats always describe the currently visible (zoomed) window.
+  const s = computeStats(viewFrom, viewTo);
   if (!s) {
     statMinEl.textContent = "--";
     statMaxEl.textContent = "--";
@@ -531,7 +531,12 @@ function updateStatTiles() {
   statMinEl.textContent = s.min;
   statMaxEl.textContent = s.max;
   statAvgEl.textContent = s.avg;
-  statRangeLabel.textContent = useSel ? `${fmtClock(a)} – ${fmtClock(b)}` : t("stats.fullDay");
+  if (!isZoomed()) {
+    statRangeLabel.textContent = t("stats.fullDay");
+  } else {
+    const fmt = viewTo - viewFrom < 90 * 1000 ? fmtClockSec : fmtClock;
+    statRangeLabel.textContent = `${fmt(viewFrom)} – ${fmt(viewTo)}`;
+  }
 }
 
 function initStatsCanvas() {
@@ -551,6 +556,19 @@ function niceStep(range, target) {
   else if (norm < 7) step = 5;
   else step = 10;
   return Math.max(1, step * pow);
+}
+
+// Nice time-axis step (ms) for the visible span, aiming for ~target ticks.
+const TIME_STEPS = [
+  1000, 2000, 5000, 10000, 15000, 30000,
+  60000, 2 * 60000, 5 * 60000, 10 * 60000, 15 * 60000, 30 * 60000,
+  HOUR_MS, 2 * HOUR_MS, 3 * HOUR_MS, 6 * HOUR_MS, 12 * HOUR_MS,
+];
+function niceTimeStep(span, target) {
+  for (const s of TIME_STEPS) {
+    if (span / s <= target) return s;
+  }
+  return TIME_STEPS[TIME_STEPS.length - 1];
 }
 
 function drawStats() {
@@ -577,18 +595,28 @@ function drawStats() {
     return;
   }
 
+  // y-range over the VISIBLE window so zooming re-scales vertically
   let mn = Infinity;
   let mx = -Infinity;
   for (const p of statsData) {
+    if (p.t < viewFrom || p.t > viewTo) continue;
     if (p.bpm < mn) mn = p.bpm;
     if (p.bpm > mx) mx = p.bpm;
+  }
+  if (mn === Infinity) {
+    ctx.fillStyle = "#555";
+    ctx.font = `${12 * dpr}px "Segoe UI", system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(t("stats.noData"), w / 2, h / 2);
+    return;
   }
   mn = Math.floor(mn - 5);
   mx = Math.ceil(mx + 5);
   if (mx - mn < 10) mx = mn + 10;
 
-  const span = statsTo - statsFrom || 1;
-  const xOf = (tms) => padL + ((tms - statsFrom) / span) * plotW;
+  const span = viewTo - viewFrom || 1;
+  const xOf = (tms) => padL + ((tms - viewFrom) / span) * plotW;
   const yOf = (v) => padT + (1 - (v - mn) / (mx - mn)) * plotH;
 
   // horizontal gridlines + y labels
@@ -608,29 +636,31 @@ function drawStats() {
     ctx.fillText(String(v), padL - 5 * dpr, y);
   }
 
-  // vertical hourly gridlines + hour labels
-  const hourCssPx = plotW / dpr / 24;
-  const labelStep = hourCssPx >= 20 ? 1 : hourCssPx >= 12 ? 2 : 3;
+  // vertical time gridlines + adaptive labels (hour → minute → second)
+  const tStep = niceTimeStep(span, 8);
+  const tCssPx = (tStep / span) * (plotW / dpr);
+  const tLabelStep = tCssPx >= 42 ? 1 : tCssPx >= 24 ? 2 : 3;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   const xLabelY = padT + plotH + 4 * dpr;
-  for (let hh = 0; hh <= 24; hh++) {
-    const x = xOf(statsFrom + hh * HOUR_MS);
+  let ti = 0;
+  for (let tt = Math.ceil(viewFrom / tStep) * tStep; tt <= viewTo; tt += tStep, ti++) {
+    const x = xOf(tt);
     ctx.strokeStyle = "rgba(255,255,255,0.04)";
     ctx.beginPath();
     ctx.moveTo(x, padT);
     ctx.lineTo(x, padT + plotH);
     ctx.stroke();
-    if (hh < 24 && hh % labelStep === 0) {
+    if (ti % tLabelStep === 0) {
       ctx.fillStyle = "#666";
-      ctx.fillText(String(hh), x, xLabelY);
+      ctx.fillText(fmtTick(tt, span), x, xLabelY);
     }
   }
 
-  // selection band
-  if (selStart != null && selEnd != null) {
-    const x0 = xOf(Math.min(selStart, selEnd));
-    const x1 = xOf(Math.max(selStart, selEnd));
+  // drag-to-zoom preview band
+  if (statsMoved && dragFromT != null && dragToT != null) {
+    const x0 = xOf(Math.min(dragFromT, dragToT));
+    const x1 = xOf(Math.max(dragFromT, dragToT));
     ctx.fillStyle = "rgba(58,134,255,0.15)";
     ctx.fillRect(x0, padT, Math.max(1, x1 - x0), plotH);
     ctx.strokeStyle = "rgba(58,134,255,0.5)";
@@ -642,25 +672,60 @@ function drawStats() {
     ctx.stroke();
   }
 
-  // HR line, split across gaps > 5 min
+  // HR line (clipped to the plot area; off-view points are clipped away)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(padL, padT, plotW, plotH);
+  ctx.clip();
   ctx.strokeStyle = "#e74c6f";
   ctx.lineWidth = 1.5 * dpr;
   ctx.lineJoin = "round";
   ctx.beginPath();
   const GAP = 5 * 60 * 1000;
-  let started = false;
   for (let i = 0; i < statsData.length; i++) {
     const p = statsData[i];
     const x = xOf(p.t);
     const y = yOf(p.bpm);
-    if (!started || (i > 0 && p.t - statsData[i - 1].t > GAP)) {
-      ctx.moveTo(x, y);
-      started = true;
-    } else {
-      ctx.lineTo(x, y);
-    }
+    if (i === 0 || p.t - statsData[i - 1].t > GAP) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
   }
   ctx.stroke();
+
+  // individual sample dots when zoomed in far enough to see them
+  if (isZoomed()) {
+    const visPts = statsData.filter((p) => p.t >= viewFrom && p.t <= viewTo);
+    if (visPts.length && visPts.length <= 150) {
+      ctx.fillStyle = "#e74c6f";
+      const r = 2 * dpr;
+      for (const p of visPts) {
+        ctx.beginPath();
+        ctx.arc(xOf(p.t), yOf(p.bpm), r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // hover crosshair + highlighted sample
+  if (hoverPoint && !statsDragging && hoverPoint.t >= viewFrom && hoverPoint.t <= viewTo) {
+    const hx = xOf(hoverPoint.t);
+    const hy = yOf(hoverPoint.bpm);
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(hx, padT);
+    ctx.lineTo(hx, padT + plotH);
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(hx, hy, 3 * dpr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#e74c6f";
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 3 * dpr, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function statsXToTime(clientX) {
@@ -668,61 +733,148 @@ function statsXToTime(clientX) {
   const plotCssW = rect.width - STATS_PAD.l - STATS_PAD.r;
   let frac = (clientX - rect.left - STATS_PAD.l) / plotCssW;
   frac = Math.max(0, Math.min(1, frac));
-  return Math.round(statsFrom + frac * (statsTo - statsFrom));
+  return Math.round(viewFrom + frac * (viewTo - viewFrom));
+}
+
+function zoomTo(a, b) {
+  let lo = Math.min(a, b);
+  let hi = Math.max(a, b);
+  if (hi - lo < MIN_ZOOM_MS) {
+    const c = (lo + hi) / 2;
+    lo = c - MIN_ZOOM_MS / 2;
+    hi = c + MIN_ZOOM_MS / 2;
+  }
+  lo = Math.max(statsFrom, lo);
+  hi = Math.min(statsTo, hi);
+  if (hi - lo < 1) return;
+  zoomStack.push([viewFrom, viewTo]);
+  viewFrom = Math.round(lo);
+  viewTo = Math.round(hi);
+  updateZoomBtn();
+  drawStats();
+  updateStatTiles();
+}
+function zoomOut() {
+  if (!zoomStack.length) return;
+  [viewFrom, viewTo] = zoomStack.pop();
+  hoverPoint = null;
+  hideStatsTooltip();
+  updateZoomBtn();
+  drawStats();
+  updateStatTiles();
+}
+function resetZoom() {
+  if (!isZoomed()) return;
+  zoomStack = [];
+  viewFrom = statsFrom;
+  viewTo = statsTo;
+  updateZoomBtn();
+  drawStats();
+  updateStatTiles();
 }
 
 statsCanvas.addEventListener("mousedown", (e) => {
-  if (!statsData.length) return;
+  if (e.button !== 0 || !statsData.length) return; // left button only
   statsDragging = true;
   statsMoved = false;
   statsDownX = e.clientX;
-  shiftHeld = e.shiftKey;
-  rawStart = statsXToTime(e.clientX);
-  rawEnd = rawStart;
-  selStart = null; // no band until an actual drag
-  selEnd = null;
+  dragFromT = statsXToTime(e.clientX);
+  dragToT = dragFromT;
+  hoverPoint = null;
+  hideStatsTooltip();
   drawStats();
 });
 window.addEventListener("mousemove", (e) => {
   if (!statsDragging) return;
-  shiftHeld = e.shiftKey;
-  rawEnd = statsXToTime(e.clientX);
+  dragToT = statsXToTime(e.clientX);
   if (Math.abs(e.clientX - statsDownX) > 3) statsMoved = true;
-  if (statsMoved) applyStatsSnap();
   drawStats();
-  updateStatTiles();
 });
 window.addEventListener("mouseup", () => {
   if (!statsDragging) return;
   statsDragging = false;
-  if (!statsMoved) {
-    // a plain click clears any selection
-    rawStart = null;
-    rawEnd = null;
-    selStart = null;
-    selEnd = null;
+  const moved = statsMoved;
+  const a = dragFromT;
+  const b = dragToT;
+  dragFromT = null;
+  dragToT = null;
+  statsMoved = false;
+  if (moved && a != null && b != null) {
+    zoomTo(a, b); // drag → zoom into the selected range
   } else {
-    applyStatsSnap();
+    drawStats(); // plain click → clear the preview band
   }
+});
+// double-click steps back out one zoom level
+statsCanvas.addEventListener("dblclick", () => {
+  zoomOut();
+});
+// right-click resets zoom straight back to the full day
+statsCanvas.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  hoverPoint = null;
+  hideStatsTooltip();
+  resetZoom();
+});
+
+// ── Hover tooltip (time | BPM of the nearest sample) ──
+function hideStatsTooltip() {
+  if (statsTooltip) statsTooltip.hidden = true;
+}
+function nearestVisiblePoint(tms) {
+  let best = null;
+  let bestD = Infinity;
+  for (const p of statsData) {
+    if (p.t < viewFrom || p.t > viewTo) continue;
+    const d = Math.abs(p.t - tms);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best;
+}
+function handleStatsHover(e) {
+  if (statsDragging || !statsData.length) return;
+  const p = nearestVisiblePoint(statsXToTime(e.clientX));
+  hoverPoint = p;
+  if (!p) {
+    hideStatsTooltip();
+    drawStats();
+    return;
+  }
+  const rect = statsCanvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  statsTooltip.textContent = `${fmtClockSec(p.t)} | ${p.bpm} BPM`;
+  statsTooltip.hidden = false;
+  const tw = statsTooltip.offsetWidth;
+  const th = statsTooltip.offsetHeight;
+  let left = cx + 12;
+  let top = cy - th - 10;
+  if (left + tw > rect.width) left = cx - tw - 12;
+  if (top < 0) top = cy + 14;
+  statsTooltip.style.left = `${Math.max(0, left)}px`;
+  statsTooltip.style.top = `${Math.max(0, top)}px`;
   drawStats();
-  updateStatTiles();
+}
+statsCanvas.addEventListener("mousemove", (e) => {
+  if (statsDragging) return;
+  lastHoverEvent = e;
+  if (hoverRAF) return;
+  hoverRAF = requestAnimationFrame(() => {
+    hoverRAF = 0;
+    if (lastHoverEvent) handleStatsHover(lastHoverEvent);
+  });
 });
-// Holding/releasing Shift mid-drag switches snap granularity live
-window.addEventListener("keydown", (e) => {
-  if (e.key === "Shift" && statsDragging && !shiftHeld) {
-    shiftHeld = true;
-    if (statsMoved) applyStatsSnap();
-    drawStats();
-    updateStatTiles();
+statsCanvas.addEventListener("mouseleave", () => {
+  if (hoverRAF) {
+    cancelAnimationFrame(hoverRAF);
+    hoverRAF = 0;
   }
-});
-window.addEventListener("keyup", (e) => {
-  if (e.key === "Shift" && statsDragging) {
-    shiftHeld = false;
-    if (statsMoved) applyStatsSnap();
-    drawStats();
-    updateStatTiles();
-  }
+  hoverPoint = null;
+  hideStatsTooltip();
+  drawStats();
 });
 
 function shiftStatsDay(delta) {
@@ -742,6 +894,7 @@ document.getElementById("statsToday").addEventListener("click", () => {
   setStatsDateToday();
   loadStats();
 });
+document.getElementById("statsZoomOut").addEventListener("click", resetZoom);
 
 window.addEventListener("resize", () => {
   if (statsOpen) drawStats();

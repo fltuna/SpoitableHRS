@@ -183,6 +183,7 @@
           <input type="date" id="statsDate" class="stats-date" />
           <button class="stats-navbtn" id="statsNext">&#x203A;</button>
           <button class="stats-todaybtn" id="statsToday" data-i18n="stats.today">Today</button>
+          <button class="stats-todaybtn stats-zoomout" id="statsZoomOut" data-i18n="stats.resetZoom" hidden>Full range</button>
         </div>
       </div>
       <div class="stats-tiles">
@@ -191,7 +192,7 @@
         <div class="stat-tile"><div class="stat-tile-label" data-i18n="stats.max">Max</div><div class="stat-tile-val" id="statMax">--</div></div>
       </div>
       <div class="stats-range-label" id="statRangeLabel"></div>
-      <div class="stats-graph-wrap"><canvas id="statsCanvas"></canvas></div>
+      <div class="stats-graph-wrap"><canvas id="statsCanvas"></canvas><div class="stats-tooltip" id="statsTooltip" hidden></div></div>
       <div class="stats-hint" data-i18n="stats.dragHint">Drag to select a range</div>
     </div>
 

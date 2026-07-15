@@ -433,6 +433,8 @@ body {
   font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s;
 }
 .stats-todaybtn:hover { background: rgba(58,134,255,0.2); }
+.stats-zoomout { background: rgba(255,255,255,0.06); color: #bbb; }
+.stats-zoomout:hover { background: rgba(255,255,255,0.12); }
 
 .stats-tiles { display: flex; gap: 10px; margin-bottom: 8px; }
 .stat-tile {
@@ -452,10 +454,18 @@ body {
   margin-bottom: 10px; min-height: 14px;
 }
 .stats-graph-wrap {
+  position: relative;
   flex: 1; min-height: 0; border-radius: 10px; overflow: hidden;
   background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.04);
 }
 .stats-graph-wrap canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.stats-tooltip {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: rgba(12,12,26,0.92); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px; padding: 4px 8px; font-size: 11px; color: #eee;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
 .stats-hint { font-size: 10px; color: #666; text-align: center; margin-top: 8px; }
 
 /* ── Animations ── */
