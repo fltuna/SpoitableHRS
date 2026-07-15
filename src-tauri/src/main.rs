@@ -3,6 +3,7 @@
 mod ble;
 mod config;
 mod osc;
+mod recorder;
 mod ws;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,6 +26,10 @@ pub struct AppState {
     pub start_minimized: Arc<AtomicBool>,
     pub language: Arc<Mutex<String>>,
     pub graph_interval_ms: Arc<Mutex<u64>>,
+    pub recording_enabled: Arc<AtomicBool>,
+    pub record_interval_ms: Arc<Mutex<u64>>,
+    pub flush_interval_ms: Arc<Mutex<u64>>,
+    pub recorder: Arc<recorder::Recorder>,
 }
 
 fn save_config(state: &AppState) {
@@ -38,6 +43,9 @@ fn save_config(state: &AppState) {
         start_minimized: state.start_minimized.load(Ordering::Relaxed),
         language: state.language.lock().unwrap().clone(),
         graph_interval_ms: *state.graph_interval_ms.lock().unwrap(),
+        recording_enabled: state.recording_enabled.load(Ordering::Relaxed),
+        record_interval_ms: *state.record_interval_ms.lock().unwrap(),
+        flush_interval_ms: *state.flush_interval_ms.lock().unwrap(),
     };
     config::save(&cfg);
 }
@@ -219,6 +227,67 @@ fn set_graph_interval(state: State<'_, AppState>, interval: u64) {
 #[tauri::command]
 fn get_graph_interval(state: State<'_, AppState>) -> u64 {
     *state.graph_interval_ms.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_recording_enabled(state: State<'_, AppState>, enabled: bool) {
+    state.recording_enabled.store(enabled, Ordering::Relaxed);
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_recording_enabled(state: State<'_, AppState>) -> bool {
+    state.recording_enabled.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_record_interval(state: State<'_, AppState>, interval: u64) {
+    let clamped = interval.clamp(250, 60_000);
+    *state.record_interval_ms.lock().unwrap() = clamped;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_record_interval(state: State<'_, AppState>) -> u64 {
+    *state.record_interval_ms.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_flush_interval(state: State<'_, AppState>, interval: u64) {
+    let clamped = interval.clamp(500, 300_000);
+    *state.flush_interval_ms.lock().unwrap() = clamped;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_flush_interval(state: State<'_, AppState>) -> u64 {
+    *state.flush_interval_ms.lock().unwrap()
+}
+
+#[tauri::command]
+fn read_hr_records(from: i64, to: i64) -> Vec<recorder::HrPoint> {
+    recorder::read_range(from, to)
+}
+
+#[tauri::command]
+fn open_records_dir() -> Result<(), String> {
+    let dir = recorder::records_root();
+    std::process::Command::new("explorer")
+        .arg(dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_stats_expanded(app: tauri::AppHandle, expanded: bool) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(win) = app.get_webview_window("main") {
+        let (w, h) = if expanded { (1060.0, 720.0) } else { (450.0, 720.0) };
+        win.set_size(tauri::LogicalSize::new(w, h))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -419,6 +488,63 @@ fn main() {
         rt.block_on(ws::start_server(ws_port, bc));
     });
 
+    // Shared state used by both the Tauri commands and the recorder thread.
+    let heart_rate = Arc::new(Mutex::new(0u16));
+    let connected = Arc::new(Mutex::new(false));
+    let recording_enabled = Arc::new(AtomicBool::new(cfg.recording_enabled));
+    let record_interval_ms = Arc::new(Mutex::new(cfg.record_interval_ms));
+    let flush_interval_ms = Arc::new(Mutex::new(cfg.flush_interval_ms));
+    let recorder = Arc::new(recorder::Recorder::new());
+
+    // CSV recorder: sample HR into a queue at the record interval, flush the
+    // queue to hourly CSV files at the flush interval. Runs for the app's
+    // lifetime; remaining rows are flushed synchronously on RunEvent::Exit.
+    {
+        let s_hr = heart_rate.clone();
+        let s_conn = connected.clone();
+        let s_enabled = recording_enabled.clone();
+        let s_record_interval = record_interval_ms.clone();
+        let s_flush_interval = flush_interval_ms.clone();
+        let s_recorder = recorder.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                let sampler = {
+                    let hr = s_hr.clone();
+                    let conn = s_conn.clone();
+                    let enabled = s_enabled.clone();
+                    let interval = s_record_interval.clone();
+                    let rec = s_recorder.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            let ms = *interval.lock().unwrap();
+                            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                            if !enabled.load(Ordering::Relaxed) || !*conn.lock().unwrap() {
+                                continue;
+                            }
+                            let bpm = *hr.lock().unwrap();
+                            if bpm > 0 {
+                                rec.record(bpm);
+                            }
+                        }
+                    })
+                };
+                let flusher = {
+                    let interval = s_flush_interval.clone();
+                    let rec = s_recorder.clone();
+                    tokio::spawn(async move {
+                        loop {
+                            let ms = *interval.lock().unwrap();
+                            tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+                            rec.flush();
+                        }
+                    })
+                };
+                let _ = tokio::join!(sampler, flusher);
+            });
+        });
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
@@ -466,8 +592,8 @@ fn main() {
             Ok(())
         })
         .manage(AppState {
-            heart_rate: Arc::new(Mutex::new(0)),
-            connected: Arc::new(Mutex::new(false)),
+            heart_rate,
+            connected,
             osc_enabled: Arc::new(Mutex::new(cfg.osc_enabled)),
             osc_port: Arc::new(Mutex::new(cfg.osc_port)),
             osc_params: Arc::new(Mutex::new(cfg.osc_params)),
@@ -481,6 +607,10 @@ fn main() {
             start_minimized: Arc::new(AtomicBool::new(cfg.start_minimized)),
             language: Arc::new(Mutex::new(cfg.language)),
             graph_interval_ms: Arc::new(Mutex::new(cfg.graph_interval_ms)),
+            recording_enabled,
+            record_interval_ms,
+            flush_interval_ms,
+            recorder,
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -506,6 +636,15 @@ fn main() {
             get_language,
             set_graph_interval,
             get_graph_interval,
+            set_recording_enabled,
+            get_recording_enabled,
+            set_record_interval,
+            get_record_interval,
+            set_flush_interval,
+            get_flush_interval,
+            read_hr_records,
+            open_records_dir,
+            set_stats_expanded,
             check_update,
             download_and_install_update,
             debug_updater,
@@ -517,6 +656,8 @@ fn main() {
             if let tauri::RunEvent::Exit = event {
                 use tauri::Manager;
                 let state = app.state::<AppState>();
+                // Flush any queued HR samples before the process exits.
+                state.recorder.flush();
                 save_config(&state);
                 if *state.osc_enabled.lock().unwrap() {
                     let port = *state.osc_port.lock().unwrap();

@@ -39,20 +39,20 @@ body {
 
 /* ── Top bar ── */
 .top-backdrop {
-  position: absolute; top: 0; left: 0; right: 0; height: 46px;
-  background: linear-gradient(180deg, rgba(26,26,46,0.85) 0%, rgba(26,26,46,0.4) 70%, transparent 100%);
+  position: absolute; top: 0; left: 0; right: 0; height: 50px;
+  background: linear-gradient(180deg, rgba(20,20,38,0.95) 0%, rgba(20,20,38,0.55) 55%, transparent 100%);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   z-index: 25; pointer-events: none;
 }
 
 .app-title {
-  position: absolute; top: 18px; left: 0; right: 0;
+  position: absolute; top: 15px; left: 0; right: 0;
   display: flex; align-items: center; justify-content: center; gap: 10px;
   z-index: 25; pointer-events: none;
 }
 .app-title span { font-size: 11px; color: #999; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 500; }
 .title-version {
-  position: absolute; top: 33px; left: 0; right: 0;
+  position: absolute; top: 30px; left: 0; right: 0;
   text-align: center; font-size: 9px; color: #555;
   letter-spacing: 0.1em; pointer-events: none; z-index: 25;
 }
@@ -367,6 +367,96 @@ body {
 .overlay-btn.accent:hover { background: rgba(58,134,255,0.2); }
 .overlay-btn.copied { background: rgba(46,204,113,0.15); border-color: rgba(46,204,113,0.2); color: #2ecc71; }
 .overlay-help { font-size: 11px; color: #888; line-height: 1.6; padding: 4px; }
+
+/* ── Stats drawer ── */
+.stats-panel {
+  position: absolute; top: 0; left: 450px; right: 0; bottom: 0;
+  background: var(--bg-base);
+  border-left: 1px solid rgba(255,255,255,0.06);
+  display: none; flex-direction: column;
+  padding: 52px 18px 16px; z-index: 15;
+}
+.app.stats-open .stats-panel { display: flex; }
+/* When expanded, keep the view content pinned to the left 450px column;
+   the title/version stay full-width so they center across the whole window. */
+.app.stats-open .content { width: 450px; right: auto; }
+
+/* The full-width top bar (shared by both states, see .top-backdrop above) reads
+   as the window titlebar; when expanded the centered title sits over it. The
+   bar has no hard bottom line — it fades out via gradient so nothing is sharply
+   divided. */
+/* longer keylines flank the title so the eye reads the whole bar as one unit */
+.app.stats-open .app-title .title-line { width: 90px; }
+/* soft, blurred column separator instead of a hard line — a faint vertical
+   gradient that fades out at top and bottom rather than cutting the panes apart */
+.app.stats-open .stats-panel { border-left: none; padding-top: 62px; }
+.app.stats-open .stats-panel::before {
+  content: "";
+  position: absolute;
+  left: -1px; top: 40px; bottom: 8px; width: 3px;
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(255,255,255,0.05) 22%,
+    rgba(255,255,255,0.05) 78%,
+    transparent 100%);
+  filter: blur(1.5px);
+}
+/* demote the panel's own heading to a subordinate kicker → no double heading */
+.app.stats-open .stats-title {
+  font-size: 10px; font-weight: 700; color: #666; letter-spacing: 0.16em;
+}
+
+.stats-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 14px;
+}
+.stats-title {
+  font-size: 12px; font-weight: 700; color: #bbb;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.stats-nav { display: flex; align-items: center; gap: 6px; }
+.stats-navbtn {
+  width: 24px; height: 24px; border: none; border-radius: 6px;
+  background: rgba(255,255,255,0.05); color: #aaa; cursor: pointer;
+  font-size: 15px; line-height: 1; transition: background 0.15s, color 0.15s;
+}
+.stats-navbtn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.stats-date {
+  background: var(--bg-deep); border: 1px solid #2a2a3a; border-radius: 6px;
+  color: #eee; font-size: 12px; padding: 5px 8px; outline: none; color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.stats-date:focus { border-color: rgba(58,134,255,0.3); }
+.stats-todaybtn {
+  padding: 5px 10px; border: none; border-radius: 6px;
+  background: rgba(58,134,255,0.12); color: var(--accent);
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s;
+}
+.stats-todaybtn:hover { background: rgba(58,134,255,0.2); }
+
+.stats-tiles { display: flex; gap: 10px; margin-bottom: 8px; }
+.stat-tile {
+  flex: 1; background: rgba(22,33,62,0.6); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px; padding: 12px 10px; text-align: center;
+}
+.stat-tile-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: #888; margin-bottom: 6px;
+}
+.stat-tile-val { font-size: 26px; font-weight: 700; color: #eee; font-variant-numeric: tabular-nums; }
+#statMin { color: #5dade2; }
+#statMax { color: var(--heart); }
+
+.stats-range-label {
+  font-size: 11px; color: #888; text-align: center;
+  margin-bottom: 10px; min-height: 14px;
+}
+.stats-graph-wrap {
+  flex: 1; min-height: 0; border-radius: 10px; overflow: hidden;
+  background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.04);
+}
+.stats-graph-wrap canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.stats-hint { font-size: 10px; color: #666; text-align: center; margin-top: 8px; }
 
 /* ── Animations ── */
 @keyframes heartbeat {

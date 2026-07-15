@@ -34,6 +34,11 @@
   "settings.startMinimized": "最小化で起動",
   "settings.language": "言語",
   "settings.graphInterval": "グラフ更新間隔",
+  "settings.recordingHeader": "記録",
+  "settings.recording": "CSVに記録",
+  "settings.recordInterval": "記録間隔",
+  "settings.flushInterval": "書き込み間隔",
+  "settings.openRecords": "記録フォルダを開く",
   "settings.aboutHeader": "このアプリについて",
   "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
   "settings.checkingUpdate": "更新を確認中...",
@@ -45,8 +50,18 @@
 
   "sidebar.monitor": "モニター",
   "sidebar.overlay": "オーバーレイ",
+  "sidebar.stats": "統計",
   "sidebar.settings": "設定",
   "sidebar.log": "ログ",
+
+  "stats.title": "統計",
+  "stats.min": "最低",
+  "stats.avg": "平均",
+  "stats.max": "最高",
+  "stats.today": "今日",
+  "stats.fullDay": "1日全体",
+  "stats.noData": "データなし",
+  "stats.dragHint": "ドラッグで範囲選択 · 15分単位でスナップ(Shiftで1分単位)",
 
   "notification.minimized": "システムトレイに最小化しました。トレイアイコンをクリックで復元します。",
 

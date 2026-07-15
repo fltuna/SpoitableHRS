@@ -139,6 +139,19 @@
             </div>
           </div>
           <div class="s-section">
+            <div class="s-header" data-i18n="settings.recordingHeader">Recording</div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.recording">Record to CSV</span><div class="toggle-switch" id="recordingToggle" data-checked="true"><div class="toggle-thumb"></div></div></div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.recordInterval">Record interval</span>
+              <input type="number" id="recordInterval" class="s-input s-input-short" min="250" max="60000" step="250" value="1000">
+              <span class="s-unit">ms</span>
+            </div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.flushInterval">Flush interval</span>
+              <input type="number" id="flushInterval" class="s-input s-input-short" min="500" max="300000" step="500" value="3000">
+              <span class="s-unit">ms</span>
+            </div>
+            <button id="openRecordsBtn" class="s-btn" data-i18n="settings.openRecords">Open records folder</button>
+          </div>
+          <div class="s-section">
             <div class="s-header" data-i18n="settings.aboutHeader">About</div>
             <div class="about-text">
               <div>SpoitableHRS <span class="about-version" id="appVersion"></span></div>
@@ -159,6 +172,27 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Stats drawer (expands window horizontally) -->
+    <div class="stats-panel" id="statsPanel">
+      <div class="stats-head">
+        <div class="stats-title" data-i18n="stats.title">Statistics</div>
+        <div class="stats-nav">
+          <button class="stats-navbtn" id="statsPrev">&#x2039;</button>
+          <input type="date" id="statsDate" class="stats-date" />
+          <button class="stats-navbtn" id="statsNext">&#x203A;</button>
+          <button class="stats-todaybtn" id="statsToday" data-i18n="stats.today">Today</button>
+        </div>
+      </div>
+      <div class="stats-tiles">
+        <div class="stat-tile"><div class="stat-tile-label" data-i18n="stats.min">Min</div><div class="stat-tile-val" id="statMin">--</div></div>
+        <div class="stat-tile"><div class="stat-tile-label" data-i18n="stats.avg">Avg</div><div class="stat-tile-val" id="statAvg">--</div></div>
+        <div class="stat-tile"><div class="stat-tile-label" data-i18n="stats.max">Max</div><div class="stat-tile-val" id="statMax">--</div></div>
+      </div>
+      <div class="stats-range-label" id="statRangeLabel"></div>
+      <div class="stats-graph-wrap"><canvas id="statsCanvas"></canvas></div>
+      <div class="stats-hint" data-i18n="stats.dragHint">Drag to select a range</div>
     </div>
 
     <!-- Device selection modal -->
@@ -187,6 +221,10 @@
       <div class="sidebar-icon" data-view="overlay" data-label="Overlay">
         <svg viewBox="0 0 24 24"><path d="M2 17l10 5 10-5M2 12l10 5 10-5M12 2L2 7l10 5 10-5-10-5z"/></svg>
         <div class="sidebar-tooltip" data-i18n="sidebar.overlay">Overlay</div>
+      </div>
+      <div class="sidebar-icon" data-view="stats" data-label="Stats">
+        <svg viewBox="0 0 24 24"><path d="M3 3v18h18v-2H5V3H3zm4 10h2v5H7v-5zm4-4h2v9h-2V9zm4 2h2v7h-2v-7zm4-5h2v12h-2V6z"/></svg>
+        <div class="sidebar-tooltip" data-i18n="sidebar.stats">Stats</div>
       </div>
       <div class="sidebar-icon" data-view="settings" data-label="Settings">
         <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.09-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>

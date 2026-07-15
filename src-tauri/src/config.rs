@@ -15,6 +15,12 @@ pub struct AppConfig {
     pub language: String,
     #[serde(default = "default_graph_interval")]
     pub graph_interval_ms: u64,
+    #[serde(default = "default_recording_enabled")]
+    pub recording_enabled: bool,
+    #[serde(default = "default_record_interval")]
+    pub record_interval_ms: u64,
+    #[serde(default = "default_flush_interval")]
+    pub flush_interval_ms: u64,
 }
 
 impl Default for AppConfig {
@@ -29,12 +35,27 @@ impl Default for AppConfig {
             start_minimized: false,
             language: detect_os_language(),
             graph_interval_ms: default_graph_interval(),
+            recording_enabled: default_recording_enabled(),
+            record_interval_ms: default_record_interval(),
+            flush_interval_ms: default_flush_interval(),
         }
     }
 }
 
 fn default_graph_interval() -> u64 {
     800
+}
+
+fn default_recording_enabled() -> bool {
+    true
+}
+
+fn default_record_interval() -> u64 {
+    1000
+}
+
+fn default_flush_interval() -> u64 {
+    3000
 }
 
 fn detect_os_language() -> String {

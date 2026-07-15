@@ -362,7 +362,17 @@ sidebar.addEventListener("mouseleave", startCloseSidebar);
 document.querySelectorAll(".sidebar-icon").forEach((icon) => {
   icon.addEventListener("click", () => {
     const viewName = icon.dataset.view;
-    document.querySelectorAll(".sidebar-icon").forEach((i) => i.classList.remove("active"));
+    // Stats is a collapsible drawer, not a swappable view — toggling it is
+    // independent of which left-side view is active.
+    if (viewName === "stats") {
+      toggleStats();
+      return;
+    }
+    // Switching the left view keeps the stats drawer open; only clear the
+    // active state of the other (non-stats) view icons.
+    document.querySelectorAll(".sidebar-icon").forEach((i) => {
+      if (i.dataset.view !== "stats") i.classList.remove("active");
+    });
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     icon.classList.add("active");
     document.getElementById(`view-${viewName}`).classList.add("active");
@@ -376,6 +386,365 @@ document.querySelectorAll(".toggle-switch").forEach((toggle) => {
     const checked = toggle.dataset.checked === "true";
     toggle.dataset.checked = (!checked).toString();
   });
+});
+
+// ── Stats drawer ──
+const statsIcon = document.querySelector('.sidebar-icon[data-view="stats"]');
+const statsCanvas = document.getElementById("statsCanvas");
+const statsDateInput = document.getElementById("statsDate");
+const statMinEl = document.getElementById("statMin");
+const statMaxEl = document.getElementById("statMax");
+const statAvgEl = document.getElementById("statAvg");
+const statRangeLabel = document.getElementById("statRangeLabel");
+
+let statsOpen = false;
+let statsData = []; // [{ t, bpm }]
+let statsFrom = 0;
+let statsTo = 0;
+let selStart = null; // snapped selection start (epoch ms)
+let selEnd = null; // snapped selection end (epoch ms)
+let rawStart = null; // un-snapped drag anchor
+let rawEnd = null;
+let statsDragging = false;
+let statsMoved = false;
+let statsDownX = 0;
+let shiftHeld = false;
+
+const STATS_PAD = { l: 34, r: 10, t: 12, b: 20 };
+const SNAP_COARSE_MS = 15 * 60 * 1000; // default snap: 15 min
+const SNAP_FINE_MS = 1 * 60 * 1000; // Shift held: 1 min
+const HOUR_MS = 60 * 60 * 1000;
+const dprOf = () => window.devicePixelRatio || 1;
+
+function snapFloor(tms, unit) {
+  return statsFrom + Math.floor((tms - statsFrom) / unit) * unit;
+}
+function snapCeil(tms, unit) {
+  return statsFrom + Math.ceil((tms - statsFrom) / unit) * unit;
+}
+// Snap the drag range outward to clean unit boundaries so it covers the drag.
+function applyStatsSnap() {
+  if (rawStart == null || rawEnd == null) {
+    selStart = null;
+    selEnd = null;
+    return;
+  }
+  const unit = shiftHeld ? SNAP_FINE_MS : SNAP_COARSE_MS;
+  const lo = Math.min(rawStart, rawEnd);
+  const hi = Math.max(rawStart, rawEnd);
+  selStart = Math.max(statsFrom, snapFloor(lo, unit));
+  selEnd = Math.min(statsTo, snapCeil(hi, unit));
+  if (selEnd <= selStart) selEnd = Math.min(statsTo, selStart + unit);
+}
+
+function fmtDateInput(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function setStatsDateToday() {
+  statsDateInput.value = fmtDateInput(new Date());
+}
+
+function currentDayRange() {
+  const parts = statsDateInput.value.split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return [d.getTime(), d.getTime() + 86400000 - 1];
+  }
+  const [y, m, d] = parts;
+  const from = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+  return [from, from + 86400000 - 1];
+}
+
+function fmtClock(ms) {
+  return new Date(ms).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+async function toggleStats(force) {
+  const next = force !== undefined ? force : !statsOpen;
+  if (next === statsOpen) return;
+  statsOpen = next;
+  app.classList.toggle("stats-open", statsOpen);
+  statsIcon.classList.toggle("active", statsOpen);
+  try {
+    await invoke("set_stats_expanded", { expanded: statsOpen });
+  } catch (e) {
+    console.error("set_stats_expanded failed:", e);
+  }
+  if (statsOpen) {
+    if (!statsDateInput.value) setStatsDateToday();
+    // wait for the webview to finish resizing before measuring the canvas
+    setTimeout(loadStats, 120);
+  }
+}
+
+async function loadStats() {
+  [statsFrom, statsTo] = currentDayRange();
+  selStart = null;
+  selEnd = null;
+  rawStart = null;
+  rawEnd = null;
+  statsMoved = false;
+  try {
+    statsData = (await invoke("read_hr_records", { from: statsFrom, to: statsTo })) || [];
+  } catch (e) {
+    console.error("read_hr_records failed:", e);
+    statsData = [];
+  }
+  drawStats();
+  updateStatTiles();
+}
+
+function computeStats(a, b) {
+  let mn = Infinity;
+  let mx = -Infinity;
+  let sum = 0;
+  let n = 0;
+  for (const p of statsData) {
+    if (p.t < a || p.t > b) continue;
+    if (p.bpm < mn) mn = p.bpm;
+    if (p.bpm > mx) mx = p.bpm;
+    sum += p.bpm;
+    n++;
+  }
+  if (!n) return null;
+  return { min: mn, max: mx, avg: Math.round(sum / n), count: n };
+}
+
+function updateStatTiles() {
+  const useSel = selStart != null && selEnd != null && Math.abs(selEnd - selStart) > 0;
+  const [a, b] = useSel
+    ? [Math.min(selStart, selEnd), Math.max(selStart, selEnd)]
+    : [statsFrom, statsTo];
+  const s = computeStats(a, b);
+  if (!s) {
+    statMinEl.textContent = "--";
+    statMaxEl.textContent = "--";
+    statAvgEl.textContent = "--";
+    statRangeLabel.textContent = t("stats.noData");
+    return;
+  }
+  statMinEl.textContent = s.min;
+  statMaxEl.textContent = s.max;
+  statAvgEl.textContent = s.avg;
+  statRangeLabel.textContent = useSel ? `${fmtClock(a)} – ${fmtClock(b)}` : t("stats.fullDay");
+}
+
+function initStatsCanvas() {
+  const rect = statsCanvas.parentElement.getBoundingClientRect();
+  const dpr = dprOf();
+  statsCanvas.width = Math.max(1, Math.round(rect.width * dpr));
+  statsCanvas.height = Math.max(1, Math.round(rect.height * dpr));
+}
+
+function niceStep(range, target) {
+  const raw = range / target;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / pow;
+  let step;
+  if (norm < 1.5) step = 1;
+  else if (norm < 3) step = 2;
+  else if (norm < 7) step = 5;
+  else step = 10;
+  return Math.max(1, step * pow);
+}
+
+function drawStats() {
+  initStatsCanvas();
+  const ctx = statsCanvas.getContext("2d");
+  const dpr = dprOf();
+  const w = statsCanvas.width;
+  const h = statsCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const padL = STATS_PAD.l * dpr;
+  const padR = STATS_PAD.r * dpr;
+  const padT = STATS_PAD.t * dpr;
+  const padB = STATS_PAD.b * dpr;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  if (!statsData.length) {
+    ctx.fillStyle = "#555";
+    ctx.font = `${13 * dpr}px "Segoe UI", system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(t("stats.noData"), w / 2, h / 2);
+    return;
+  }
+
+  let mn = Infinity;
+  let mx = -Infinity;
+  for (const p of statsData) {
+    if (p.bpm < mn) mn = p.bpm;
+    if (p.bpm > mx) mx = p.bpm;
+  }
+  mn = Math.floor(mn - 5);
+  mx = Math.ceil(mx + 5);
+  if (mx - mn < 10) mx = mn + 10;
+
+  const span = statsTo - statsFrom || 1;
+  const xOf = (tms) => padL + ((tms - statsFrom) / span) * plotW;
+  const yOf = (v) => padT + (1 - (v - mn) / (mx - mn)) * plotH;
+
+  // horizontal gridlines + y labels
+  ctx.lineWidth = 1;
+  ctx.font = `${10 * dpr}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const yStep = niceStep(mx - mn, 4);
+  for (let v = Math.ceil(mn / yStep) * yStep; v <= mx; v += yStep) {
+    const y = yOf(v);
+    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(w - padR, y);
+    ctx.stroke();
+    ctx.fillStyle = "#666";
+    ctx.fillText(String(v), padL - 5 * dpr, y);
+  }
+
+  // vertical hourly gridlines + hour labels
+  const hourCssPx = plotW / dpr / 24;
+  const labelStep = hourCssPx >= 20 ? 1 : hourCssPx >= 12 ? 2 : 3;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const xLabelY = padT + plotH + 4 * dpr;
+  for (let hh = 0; hh <= 24; hh++) {
+    const x = xOf(statsFrom + hh * HOUR_MS);
+    ctx.strokeStyle = "rgba(255,255,255,0.04)";
+    ctx.beginPath();
+    ctx.moveTo(x, padT);
+    ctx.lineTo(x, padT + plotH);
+    ctx.stroke();
+    if (hh < 24 && hh % labelStep === 0) {
+      ctx.fillStyle = "#666";
+      ctx.fillText(String(hh), x, xLabelY);
+    }
+  }
+
+  // selection band
+  if (selStart != null && selEnd != null) {
+    const x0 = xOf(Math.min(selStart, selEnd));
+    const x1 = xOf(Math.max(selStart, selEnd));
+    ctx.fillStyle = "rgba(58,134,255,0.15)";
+    ctx.fillRect(x0, padT, Math.max(1, x1 - x0), plotH);
+    ctx.strokeStyle = "rgba(58,134,255,0.5)";
+    ctx.beginPath();
+    ctx.moveTo(x0, padT);
+    ctx.lineTo(x0, padT + plotH);
+    ctx.moveTo(x1, padT);
+    ctx.lineTo(x1, padT + plotH);
+    ctx.stroke();
+  }
+
+  // HR line, split across gaps > 5 min
+  ctx.strokeStyle = "#e74c6f";
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  const GAP = 5 * 60 * 1000;
+  let started = false;
+  for (let i = 0; i < statsData.length; i++) {
+    const p = statsData[i];
+    const x = xOf(p.t);
+    const y = yOf(p.bpm);
+    if (!started || (i > 0 && p.t - statsData[i - 1].t > GAP)) {
+      ctx.moveTo(x, y);
+      started = true;
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.stroke();
+}
+
+function statsXToTime(clientX) {
+  const rect = statsCanvas.getBoundingClientRect();
+  const plotCssW = rect.width - STATS_PAD.l - STATS_PAD.r;
+  let frac = (clientX - rect.left - STATS_PAD.l) / plotCssW;
+  frac = Math.max(0, Math.min(1, frac));
+  return Math.round(statsFrom + frac * (statsTo - statsFrom));
+}
+
+statsCanvas.addEventListener("mousedown", (e) => {
+  if (!statsData.length) return;
+  statsDragging = true;
+  statsMoved = false;
+  statsDownX = e.clientX;
+  shiftHeld = e.shiftKey;
+  rawStart = statsXToTime(e.clientX);
+  rawEnd = rawStart;
+  selStart = null; // no band until an actual drag
+  selEnd = null;
+  drawStats();
+});
+window.addEventListener("mousemove", (e) => {
+  if (!statsDragging) return;
+  shiftHeld = e.shiftKey;
+  rawEnd = statsXToTime(e.clientX);
+  if (Math.abs(e.clientX - statsDownX) > 3) statsMoved = true;
+  if (statsMoved) applyStatsSnap();
+  drawStats();
+  updateStatTiles();
+});
+window.addEventListener("mouseup", () => {
+  if (!statsDragging) return;
+  statsDragging = false;
+  if (!statsMoved) {
+    // a plain click clears any selection
+    rawStart = null;
+    rawEnd = null;
+    selStart = null;
+    selEnd = null;
+  } else {
+    applyStatsSnap();
+  }
+  drawStats();
+  updateStatTiles();
+});
+// Holding/releasing Shift mid-drag switches snap granularity live
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Shift" && statsDragging && !shiftHeld) {
+    shiftHeld = true;
+    if (statsMoved) applyStatsSnap();
+    drawStats();
+    updateStatTiles();
+  }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.key === "Shift" && statsDragging) {
+    shiftHeld = false;
+    if (statsMoved) applyStatsSnap();
+    drawStats();
+    updateStatTiles();
+  }
+});
+
+function shiftStatsDay(delta) {
+  const parts = statsDateInput.value.split("-").map(Number);
+  const base = parts.length === 3 && !parts.some(Number.isNaN)
+    ? new Date(parts[0], parts[1] - 1, parts[2])
+    : new Date();
+  base.setDate(base.getDate() + delta);
+  statsDateInput.value = fmtDateInput(base);
+  loadStats();
+}
+
+statsDateInput.addEventListener("change", loadStats);
+document.getElementById("statsPrev").addEventListener("click", () => shiftStatsDay(-1));
+document.getElementById("statsNext").addEventListener("click", () => shiftStatsDay(1));
+document.getElementById("statsToday").addEventListener("click", () => {
+  setStatsDateToday();
+  loadStats();
+});
+
+window.addEventListener("resize", () => {
+  if (statsOpen) drawStats();
 });
 
 // ── OSC Settings ──
@@ -445,6 +814,33 @@ document.getElementById("graphInterval").addEventListener("change", () => {
     startGraphLoop(val);
     addLog(`Graph interval: ${val}ms`);
   }
+});
+
+// ── Recording settings ──
+document.getElementById("recordingToggle").addEventListener("click", () => {
+  const enabled = document.getElementById("recordingToggle").dataset.checked === "true";
+  invoke("set_recording_enabled", { enabled });
+  addLog(`Recording: ${enabled ? "on" : "off"}`);
+});
+
+document.getElementById("recordInterval").addEventListener("change", () => {
+  const val = parseInt(document.getElementById("recordInterval").value, 10);
+  if (val >= 250 && val <= 60000) {
+    invoke("set_record_interval", { interval: val });
+    addLog(`Record interval: ${val}ms`);
+  }
+});
+
+document.getElementById("flushInterval").addEventListener("change", () => {
+  const val = parseInt(document.getElementById("flushInterval").value, 10);
+  if (val >= 500 && val <= 300000) {
+    invoke("set_flush_interval", { interval: val });
+    addLog(`Flush interval: ${val}ms`);
+  }
+});
+
+document.getElementById("openRecordsBtn").addEventListener("click", () => {
+  invoke("open_records_dir");
 });
 
 document.getElementById("langSelect").addEventListener("change", async (e) => {
@@ -581,6 +977,15 @@ async function loadAllSettings() {
   const graphInt = await invoke("get_graph_interval");
   document.getElementById("graphInterval").value = graphInt;
   startGraphLoop(graphInt);
+
+  const recEnabled = await invoke("get_recording_enabled");
+  document.getElementById("recordingToggle").dataset.checked = recEnabled.toString();
+
+  const recInt = await invoke("get_record_interval");
+  document.getElementById("recordInterval").value = recInt;
+
+  const flushInt = await invoke("get_flush_interval");
+  document.getElementById("flushInterval").value = flushInt;
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;

@@ -34,6 +34,11 @@
   "settings.startMinimized": "Start minimized",
   "settings.language": "Language",
   "settings.graphInterval": "Graph update interval",
+  "settings.recordingHeader": "Recording",
+  "settings.recording": "Record to CSV",
+  "settings.recordInterval": "Record interval",
+  "settings.flushInterval": "Flush interval",
+  "settings.openRecords": "Open records folder",
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
   "settings.checkingUpdate": "Checking for updates...",
@@ -45,8 +50,18 @@
 
   "sidebar.monitor": "Monitor",
   "sidebar.overlay": "Overlay",
+  "sidebar.stats": "Stats",
   "sidebar.settings": "Settings",
   "sidebar.log": "Log",
+
+  "stats.title": "Statistics",
+  "stats.min": "Min",
+  "stats.avg": "Avg",
+  "stats.max": "Max",
+  "stats.today": "Today",
+  "stats.fullDay": "Full day",
+  "stats.noData": "No data",
+  "stats.dragHint": "Drag to select a range · snaps to 15 min (hold Shift for 1 min)",
 
   "notification.minimized": "Minimized to system tray. Click the tray icon to restore.",
 
