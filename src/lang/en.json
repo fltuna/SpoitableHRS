@@ -11,6 +11,8 @@
   "monitor.noDevices": "No devices found",
 
   "modal.selectDevice": "Select Device",
+  "modal.rememberedDevices": "Remembered Devices",
+  "modal.noRemembered": "No remembered devices",
 
   "osc.header": "OSC Output",
   "osc.enable": "Enable",
@@ -39,6 +41,10 @@
   "settings.recordInterval": "Record interval",
   "settings.flushInterval": "Flush interval",
   "settings.openRecords": "Open records folder",
+  "settings.autoReconnectHeader": "Auto Reconnect",
+  "settings.autoReconnect": "Auto reconnect",
+  "settings.autoReconnectInterval": "Retry interval",
+  "settings.rememberedDevices": "Remembered devices",
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",
   "settings.checkingUpdate": "Checking for updates...",

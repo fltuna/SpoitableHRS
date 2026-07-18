@@ -11,6 +11,8 @@
   "monitor.noDevices": "デバイスが見つかりません",
 
   "modal.selectDevice": "デバイスを選択",
+  "modal.rememberedDevices": "記憶したデバイス",
+  "modal.noRemembered": "記憶したデバイスはありません",
 
   "osc.header": "OSC出力",
   "osc.enable": "有効",
@@ -39,6 +41,10 @@
   "settings.recordInterval": "記録間隔",
   "settings.flushInterval": "書き込み間隔",
   "settings.openRecords": "記録フォルダを開く",
+  "settings.autoReconnectHeader": "自動再接続",
+  "settings.autoReconnect": "自動再接続",
+  "settings.autoReconnectInterval": "再試行間隔",
+  "settings.rememberedDevices": "記憶したデバイス",
   "settings.aboutHeader": "このアプリについて",
   "settings.aboutDesc": "VRChat・OBS向け BLE心拍モニター",
   "settings.checkingUpdate": "更新を確認中...",

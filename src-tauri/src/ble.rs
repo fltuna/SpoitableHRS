@@ -140,6 +140,68 @@ pub async fn scan() -> Result<Vec<DeviceInfo>, Box<dyn std::error::Error + Send 
     Ok(result)
 }
 
+/// Passive wait for any remembered device to advertise. Returns the device id
+/// when one is seen, or None when cancelled (auto-reconnect disabled/suspended,
+/// or a connection was established elsewhere).
+pub async fn watch_for_devices(
+    device_ids: Vec<String>,
+    enabled: Arc<AtomicBool>,
+    suspended: Arc<AtomicBool>,
+    connected: Arc<Mutex<bool>>,
+) -> Option<String> {
+    let addresses: Vec<u64> = device_ids
+        .iter()
+        .filter_map(|id| parse_address(id).ok())
+        .collect();
+    if addresses.is_empty() {
+        return None;
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let watcher = BluetoothLEAdvertisementWatcher::new().ok()?;
+        watcher
+            .SetScanningMode(BluetoothLEScanningMode::Active)
+            .ok()?;
+
+        let found: Arc<Mutex<Option<u64>>> = Arc::new(Mutex::new(None));
+        let found_clone = found.clone();
+
+        let handler = TypedEventHandler::<
+            BluetoothLEAdvertisementWatcher,
+            BluetoothLEAdvertisementReceivedEventArgs,
+        >::new(move |_, args| {
+            let Some(args) = &*args else { return Ok(()) };
+            let address = args.BluetoothAddress()?;
+            if addresses.contains(&address) {
+                *found_clone.lock().unwrap() = Some(address);
+            }
+            Ok(())
+        });
+
+        watcher.Received(&handler).ok()?;
+        watcher.Start().ok()?;
+
+        let result = loop {
+            if let Some(addr) = *found.lock().unwrap() {
+                break Some(addr);
+            }
+            if !enabled.load(Ordering::Relaxed)
+                || suspended.load(Ordering::Relaxed)
+                || *connected.lock().unwrap()
+            {
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        };
+
+        let _ = watcher.Stop();
+        result.map(format_address)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 /// Try GATT connection. Returns Ok(true) if GATT is running, Ok(false) if it failed and we should fallback.
 fn try_gatt(
     address: u64,
@@ -455,6 +517,7 @@ fn start_broadcast(
 
 pub async fn connect_and_subscribe(
     device_id: &str,
+    device_name: &str,
     heart_rate: Arc<Mutex<u16>>,
     connected: Arc<Mutex<bool>>,
     osc_enabled: Arc<Mutex<bool>>,
@@ -593,12 +656,19 @@ pub async fn connect_and_subscribe(
 
     // BLE receive loop: update shared state + emit UI event
     // Timeout after 10s of no packets = device lost
+    let mut device_remembered = false;
     loop {
         if stop_flag.load(Ordering::Relaxed) {
             break;
         }
         match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
             Ok(Some(hr)) => {
+                // First real HR packet = the connection actually works;
+                // remember the device for auto-reconnect.
+                if !device_remembered {
+                    device_remembered = true;
+                    crate::remember_device(&app, device_id, device_name);
+                }
                 *hr_sum.lock().unwrap() += hr as u64;
                 *hr_count.lock().unwrap() += 1;
                 if hr < *hr_min.lock().unwrap() {

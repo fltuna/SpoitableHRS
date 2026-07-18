@@ -244,7 +244,7 @@ async function connectToDevice(device) {
   addLog(`Connecting to ${device.id}...`);
 
   try {
-    await invoke("connect_device", { deviceId: device.id });
+    await invoke("connect_device", { deviceId: device.id, deviceName: device.name });
   } catch (e) {
     scanSpinner.classList.add("hidden");
     scanCircle.classList.remove("hidden");
@@ -334,6 +334,22 @@ listen("battery-update", (event) => {
 listen("ble-log", (event) => {
   const { message, level } = event.payload;
   addLog(message, level);
+});
+
+// Auto-reconnect found a remembered device and is connecting to it
+listen("auto-connect", (event) => {
+  connectedDevice = event.payload;
+  if (!isConnected) {
+    scanCircle.classList.add("hidden");
+    scanSpinner.classList.remove("hidden");
+    scanLabel.textContent = t("monitor.connecting");
+    scanLabel.style.color = "#999";
+    setStatus("connecting", t("status.connecting"), "#3a86ff");
+  }
+});
+
+listen("remembered-devices-changed", () => {
+  if (rememberedModal.classList.contains("active")) renderRememberedList();
 });
 
 // ── Sidebar ──
@@ -996,6 +1012,86 @@ document.getElementById("openRecordsBtn").addEventListener("click", () => {
   invoke("open_records_dir");
 });
 
+// ── Auto reconnect settings ──
+document.getElementById("autoReconnectToggle").addEventListener("click", () => {
+  const enabled = document.getElementById("autoReconnectToggle").dataset.checked === "true";
+  invoke("set_auto_reconnect_enabled", { enabled });
+  addLog(`Auto reconnect: ${enabled ? "on" : "off"}`);
+});
+
+document.getElementById("autoReconnectInterval").addEventListener("change", () => {
+  const val = parseInt(document.getElementById("autoReconnectInterval").value, 10);
+  if (val >= 1 && val <= 10) {
+    invoke("set_auto_reconnect_interval", { interval: val });
+    addLog(`Auto reconnect interval: ${val}s`);
+  }
+});
+
+// ── Remembered devices modal ──
+const rememberedModal = document.getElementById("rememberedModal");
+const rememberedListBody = document.getElementById("rememberedListBody");
+
+async function renderRememberedList() {
+  let devices = [];
+  try {
+    devices = await invoke("get_remembered_devices");
+  } catch (e) {
+    console.error("get_remembered_devices failed:", e);
+  }
+  rememberedListBody.innerHTML = "";
+
+  if (!devices.length) {
+    const empty = document.createElement("div");
+    empty.className = "modal-empty";
+    empty.textContent = t("modal.noRemembered");
+    rememberedListBody.appendChild(empty);
+    return;
+  }
+
+  devices
+    .slice()
+    .sort((a, b) => (b.last_connected || 0) - (a.last_connected || 0))
+    .forEach((d) => {
+      const item = document.createElement("div");
+      item.className = "device-item remembered-item";
+
+      const info = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "device-name";
+      name.textContent = d.name || d.id;
+      const id = document.createElement("div");
+      id.className = "device-id";
+      const last = d.last_connected ? new Date(d.last_connected).toLocaleString() : "";
+      id.textContent = last ? `${d.id} · ${last}` : d.id;
+      info.appendChild(name);
+      info.appendChild(id);
+
+      const del = document.createElement("button");
+      del.className = "remembered-delete";
+      del.innerHTML = "&#x2715;";
+      del.addEventListener("click", async () => {
+        await invoke("remove_remembered_device", { id: d.id });
+        addLog(`Removed remembered device: ${d.name || d.id}`);
+        renderRememberedList();
+      });
+
+      item.appendChild(info);
+      item.appendChild(del);
+      rememberedListBody.appendChild(item);
+    });
+}
+
+document.getElementById("rememberedDevicesBtn").addEventListener("click", () => {
+  renderRememberedList();
+  rememberedModal.classList.add("active");
+});
+document.getElementById("rememberedModalCloseBtn").addEventListener("click", () => {
+  rememberedModal.classList.remove("active");
+});
+rememberedModal.addEventListener("click", (e) => {
+  if (e.target === rememberedModal) rememberedModal.classList.remove("active");
+});
+
 document.getElementById("langSelect").addEventListener("change", async (e) => {
   const code = e.target.value;
   await loadLang(code);
@@ -1139,6 +1235,12 @@ async function loadAllSettings() {
 
   const flushInt = await invoke("get_flush_interval");
   document.getElementById("flushInterval").value = flushInt;
+
+  const arEnabled = await invoke("get_auto_reconnect_enabled");
+  document.getElementById("autoReconnectToggle").dataset.checked = arEnabled.toString();
+
+  const arInterval = await invoke("get_auto_reconnect_interval");
+  document.getElementById("autoReconnectInterval").value = arInterval;
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;

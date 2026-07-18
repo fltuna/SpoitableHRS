@@ -152,6 +152,15 @@
             <button id="openRecordsBtn" class="s-btn" data-i18n="settings.openRecords">Open records folder</button>
           </div>
           <div class="s-section">
+            <div class="s-header" data-i18n="settings.autoReconnectHeader">Auto Reconnect</div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.autoReconnect">Auto reconnect</span><div class="toggle-switch" id="autoReconnectToggle" data-checked="true"><div class="toggle-thumb"></div></div></div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.autoReconnectInterval">Retry interval</span>
+              <input type="number" id="autoReconnectInterval" class="s-input s-input-short" min="1" max="10" step="1" value="3">
+              <span class="s-unit">s</span>
+            </div>
+            <button id="rememberedDevicesBtn" class="s-btn" data-i18n="settings.rememberedDevices">Remembered devices</button>
+          </div>
+          <div class="s-section">
             <div class="s-header" data-i18n="settings.aboutHeader">About</div>
             <div class="about-text">
               <div>SpoitableHRS <span class="about-version" id="appVersion"></span></div>
@@ -204,6 +213,17 @@
           <button class="modal-close" id="modalCloseBtn">&#x2715;</button>
         </div>
         <div class="modal-body" id="deviceListBody"></div>
+      </div>
+    </div>
+
+    <!-- Remembered devices modal -->
+    <div class="modal-overlay" id="rememberedModal">
+      <div class="modal">
+        <div class="modal-header">
+          <span data-i18n="modal.rememberedDevices">Remembered Devices</span>
+          <button class="modal-close" id="rememberedModalCloseBtn">&#x2715;</button>
+        </div>
+        <div class="modal-body" id="rememberedListBody"></div>
       </div>
     </div>
 

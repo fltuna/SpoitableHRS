@@ -30,6 +30,12 @@ pub struct AppState {
     pub record_interval_ms: Arc<Mutex<u64>>,
     pub flush_interval_ms: Arc<Mutex<u64>>,
     pub recorder: Arc<recorder::Recorder>,
+    pub auto_reconnect_enabled: Arc<AtomicBool>,
+    pub auto_reconnect_interval_secs: Arc<Mutex<u64>>,
+    /// Set on manual disconnect so auto-reconnect doesn't immediately undo it.
+    /// Cleared on manual connect, app start, or re-enabling auto-reconnect.
+    pub auto_reconnect_suspended: Arc<AtomicBool>,
+    pub remembered_devices: Arc<Mutex<Vec<config::RememberedDevice>>>,
 }
 
 fn save_config(state: &AppState) {
@@ -46,8 +52,39 @@ fn save_config(state: &AppState) {
         recording_enabled: state.recording_enabled.load(Ordering::Relaxed),
         record_interval_ms: *state.record_interval_ms.lock().unwrap(),
         flush_interval_ms: *state.flush_interval_ms.lock().unwrap(),
+        auto_reconnect_enabled: state.auto_reconnect_enabled.load(Ordering::Relaxed),
+        auto_reconnect_interval_secs: *state.auto_reconnect_interval_secs.lock().unwrap(),
+        remembered_devices: state.remembered_devices.lock().unwrap().clone(),
     };
     config::save(&cfg);
+}
+
+/// Upsert a device into the remembered list and persist. Called from the BLE
+/// receive loop when the first HR packet arrives (= connection actually works).
+pub fn remember_device(app: &tauri::AppHandle, id: &str, name: &str) {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<AppState>();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    {
+        let mut devs = state.remembered_devices.lock().unwrap();
+        if let Some(d) = devs.iter_mut().find(|d| d.id == id) {
+            if !name.is_empty() {
+                d.name = name.to_string();
+            }
+            d.last_connected = now;
+        } else {
+            devs.push(config::RememberedDevice {
+                id: id.to_string(),
+                name: name.to_string(),
+                last_connected: now,
+            });
+        }
+    }
+    save_config(&state);
+    let _ = app.emit("remembered-devices-changed", ());
 }
 
 #[tauri::command]
@@ -55,12 +92,12 @@ async fn scan_devices() -> Result<Vec<ble::DeviceInfo>, String> {
     ble::scan().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-async fn connect_device(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    device_id: String,
-) -> Result<(), String> {
+/// Stop any existing BLE session and spawn a new one for the given device.
+/// Shared by the manual connect command and the auto-reconnect loop.
+fn start_connection(app: &tauri::AppHandle, device_id: String, device_name: String) {
+    use tauri::Manager;
+    let state = app.state::<AppState>();
+
     if let Some(handle) = state.ble_handle.lock().unwrap().take() {
         state.stop_flag.store(true, Ordering::Relaxed);
         handle.abort();
@@ -79,24 +116,39 @@ async fn connect_device(
     let ws_bc = state.ws_broadcaster.clone();
     let ws_enabled = state.ws_enabled.clone();
     let graph_interval = state.graph_interval_ms.clone();
+    let task_app = app.clone();
 
     let handle = tokio::spawn(async move {
         if let Err(e) = ble::connect_and_subscribe(
-            &device_id, hr, connected, osc_enabled, osc_port, osc_params, beat_toggle,
-            ws_bc, ws_enabled, graph_interval, app.clone(), stop,
+            &device_id, &device_name, hr, connected, osc_enabled, osc_port, osc_params,
+            beat_toggle, ws_bc, ws_enabled, graph_interval, task_app.clone(), stop,
         )
         .await
         {
-            ble::emit_log(&app, &format!("BLE error: {e}"), "error");
+            ble::emit_log(&task_app, &format!("BLE error: {e}"), "error");
         }
     });
 
     *state.ble_handle.lock().unwrap() = Some(handle);
+}
+
+#[tauri::command]
+async fn connect_device(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    device_id: String,
+    device_name: Option<String>,
+) -> Result<(), String> {
+    state
+        .auto_reconnect_suspended
+        .store(false, Ordering::Relaxed);
+    start_connection(&app, device_id, device_name.unwrap_or_default());
     Ok(())
 }
 
 #[tauri::command]
 async fn disconnect_device(state: State<'_, AppState>) -> Result<(), String> {
+    state.auto_reconnect_suspended.store(true, Ordering::Relaxed);
     state.stop_flag.store(true, Ordering::Relaxed);
     if let Some(handle) = state.ble_handle.lock().unwrap().take() {
         handle.abort();
@@ -262,6 +314,120 @@ fn set_flush_interval(state: State<'_, AppState>, interval: u64) {
 #[tauri::command]
 fn get_flush_interval(state: State<'_, AppState>) -> u64 {
     *state.flush_interval_ms.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_auto_reconnect_enabled(state: State<'_, AppState>, enabled: bool) {
+    state
+        .auto_reconnect_enabled
+        .store(enabled, Ordering::Relaxed);
+    if enabled {
+        // Turning it on is an explicit "reconnect for me" — lift any suspension.
+        state
+            .auto_reconnect_suspended
+            .store(false, Ordering::Relaxed);
+    }
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_auto_reconnect_enabled(state: State<'_, AppState>) -> bool {
+    state.auto_reconnect_enabled.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+fn set_auto_reconnect_interval(state: State<'_, AppState>, interval: u64) {
+    let clamped = interval.clamp(1, 10);
+    *state.auto_reconnect_interval_secs.lock().unwrap() = clamped;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_auto_reconnect_interval(state: State<'_, AppState>) -> u64 {
+    *state.auto_reconnect_interval_secs.lock().unwrap()
+}
+
+#[tauri::command]
+fn get_remembered_devices(state: State<'_, AppState>) -> Vec<config::RememberedDevice> {
+    state.remembered_devices.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn remove_remembered_device(state: State<'_, AppState>, id: String) {
+    state
+        .remembered_devices
+        .lock()
+        .unwrap()
+        .retain(|d| d.id != id);
+    save_config(&state);
+}
+
+/// Background loop: while disconnected (and not suspended), keep a passive
+/// advertisement watcher running for remembered devices and connect as soon as
+/// one shows up. After triggering a connection attempt, wait the configured
+/// interval before watching again so failed attempts don't spin.
+fn spawn_auto_reconnect(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            let (enabled, suspended, connected, ids, interval) = {
+                let state = app.state::<AppState>();
+                (
+                    state.auto_reconnect_enabled.clone(),
+                    state.auto_reconnect_suspended.clone(),
+                    state.connected.clone(),
+                    state
+                        .remembered_devices
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|d| d.id.clone())
+                        .collect::<Vec<_>>(),
+                    *state.auto_reconnect_interval_secs.lock().unwrap(),
+                )
+            };
+
+            if !enabled.load(Ordering::Relaxed)
+                || suspended.load(Ordering::Relaxed)
+                || *connected.lock().unwrap()
+                || ids.is_empty()
+            {
+                continue;
+            }
+
+            let Some(found_id) = ble::watch_for_devices(ids, enabled, suspended, connected).await
+            else {
+                continue;
+            };
+
+            let name = {
+                let state = app.state::<AppState>();
+                let devs = state.remembered_devices.lock().unwrap();
+                devs.iter()
+                    .find(|d| d.id == found_id)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_default()
+            };
+
+            ble::emit_log(
+                &app,
+                &format!("Auto-reconnect: {name} ({found_id}) detected, connecting..."),
+                "info",
+            );
+            let _ = app.emit(
+                "auto-connect",
+                ble::DeviceInfo {
+                    id: found_id.clone(),
+                    name: name.clone(),
+                },
+            );
+            start_connection(&app, found_id, name);
+
+            tokio::time::sleep(std::time::Duration::from_secs(interval.max(1))).await;
+        }
+    });
 }
 
 #[tauri::command]
@@ -589,6 +755,8 @@ fn main() {
                 })
                 .build(app)?;
 
+            spawn_auto_reconnect(app.handle().clone());
+
             Ok(())
         })
         .manage(AppState {
@@ -611,6 +779,10 @@ fn main() {
             record_interval_ms,
             flush_interval_ms,
             recorder,
+            auto_reconnect_enabled: Arc::new(AtomicBool::new(cfg.auto_reconnect_enabled)),
+            auto_reconnect_interval_secs: Arc::new(Mutex::new(cfg.auto_reconnect_interval_secs)),
+            auto_reconnect_suspended: Arc::new(AtomicBool::new(false)),
+            remembered_devices: Arc::new(Mutex::new(cfg.remembered_devices)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -642,6 +814,12 @@ fn main() {
             get_record_interval,
             set_flush_interval,
             get_flush_interval,
+            set_auto_reconnect_enabled,
+            get_auto_reconnect_enabled,
+            set_auto_reconnect_interval,
+            get_auto_reconnect_interval,
+            get_remembered_devices,
+            remove_remembered_device,
             read_hr_records,
             open_records_dir,
             set_stats_expanded,

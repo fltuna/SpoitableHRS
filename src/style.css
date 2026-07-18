@@ -333,6 +333,12 @@ body {
 .device-name { font-size: 13px; font-weight: 500; color: #eee; }
 .device-id { font-size: 11px; color: #999; margin-top: 3px; }
 .device-arrow { color: #888; font-size: 18px; }
+.remembered-item { cursor: default; }
+.remembered-delete {
+  background: none; border: none; color: #999; font-size: 13px;
+  cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.15s, color 0.15s;
+}
+.remembered-delete:hover { background: rgba(231,76,60,0.15); color: #e74c3c; }
 
 /* ── Overlay tab ── */
 .overlay-list { display: flex; flex-direction: column; gap: 10px; }

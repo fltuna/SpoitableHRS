@@ -4,6 +4,14 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RememberedDevice {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub last_connected: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub osc_enabled: bool,
     pub osc_port: u16,
@@ -21,6 +29,12 @@ pub struct AppConfig {
     pub record_interval_ms: u64,
     #[serde(default = "default_flush_interval")]
     pub flush_interval_ms: u64,
+    #[serde(default = "default_auto_reconnect_enabled")]
+    pub auto_reconnect_enabled: bool,
+    #[serde(default = "default_auto_reconnect_interval")]
+    pub auto_reconnect_interval_secs: u64,
+    #[serde(default)]
+    pub remembered_devices: Vec<RememberedDevice>,
 }
 
 impl Default for AppConfig {
@@ -38,8 +52,19 @@ impl Default for AppConfig {
             recording_enabled: default_recording_enabled(),
             record_interval_ms: default_record_interval(),
             flush_interval_ms: default_flush_interval(),
+            auto_reconnect_enabled: default_auto_reconnect_enabled(),
+            auto_reconnect_interval_secs: default_auto_reconnect_interval(),
+            remembered_devices: Vec::new(),
         }
     }
+}
+
+fn default_auto_reconnect_enabled() -> bool {
+    true
+}
+
+fn default_auto_reconnect_interval() -> u64 {
+    3
 }
 
 fn default_graph_interval() -> u64 {
