@@ -17,10 +17,7 @@ pub struct AppState {
     pub osc_port: Arc<Mutex<u16>>,
     pub osc_params: Arc<Mutex<osc::OscParamNames>>,
     pub ble_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Stop flag of the *current* BLE session. Each session gets a fresh
-    /// AtomicBool; the old session's flag stays set forever so its threads
-    /// exit whenever they next check it (no timing handshake needed).
-    pub stop_flag: Arc<Mutex<Arc<AtomicBool>>>,
+    pub stop_flag: Arc<AtomicBool>,
     pub beat_toggle: Arc<AtomicBool>,
     pub ws_broadcaster: Arc<ws::WsBroadcaster>,
     pub ws_enabled: Arc<AtomicBool>,
@@ -101,22 +98,20 @@ fn start_connection(app: &tauri::AppHandle, device_id: String, device_name: Stri
     use tauri::Manager;
     let state = app.state::<AppState>();
 
-    let stop = {
-        let mut flag = state.stop_flag.lock().unwrap();
-        flag.store(true, Ordering::Relaxed);
-        if let Some(handle) = state.ble_handle.lock().unwrap().take() {
-            handle.abort();
-        }
-        let fresh = Arc::new(AtomicBool::new(false));
-        *flag = fresh.clone();
-        fresh
-    };
+    if let Some(handle) = state.ble_handle.lock().unwrap().take() {
+        state.stop_flag.store(true, Ordering::Relaxed);
+        handle.abort();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    state.stop_flag.store(false, Ordering::Relaxed);
 
     let hr = state.heart_rate.clone();
     let connected = state.connected.clone();
     let osc_enabled = state.osc_enabled.clone();
     let osc_port = state.osc_port.clone();
     let osc_params = state.osc_params.clone();
+    let stop = state.stop_flag.clone();
     let beat_toggle = state.beat_toggle.clone();
     let ws_bc = state.ws_broadcaster.clone();
     let ws_enabled = state.ws_enabled.clone();
@@ -154,11 +149,7 @@ async fn connect_device(
 #[tauri::command]
 async fn disconnect_device(state: State<'_, AppState>) -> Result<(), String> {
     state.auto_reconnect_suspended.store(true, Ordering::Relaxed);
-    state
-        .stop_flag
-        .lock()
-        .unwrap()
-        .store(true, Ordering::Relaxed);
+    state.stop_flag.store(true, Ordering::Relaxed);
     if let Some(handle) = state.ble_handle.lock().unwrap().take() {
         handle.abort();
     }
@@ -775,7 +766,7 @@ fn main() {
             osc_port: Arc::new(Mutex::new(cfg.osc_port)),
             osc_params: Arc::new(Mutex::new(cfg.osc_params)),
             ble_handle: Arc::new(Mutex::new(None)),
-            stop_flag: Arc::new(Mutex::new(Arc::new(AtomicBool::new(false)))),
+            stop_flag: Arc::new(AtomicBool::new(false)),
             beat_toggle: Arc::new(AtomicBool::new(false)),
             ws_broadcaster,
             ws_enabled: Arc::new(AtomicBool::new(cfg.ws_enabled)),
