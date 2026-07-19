@@ -12,7 +12,7 @@ use windows::Devices::Bluetooth::Advertisement::{
 use windows::Devices::Bluetooth::BluetoothLEDevice;
 use windows::Devices::Bluetooth::GenericAttributeProfile::{
     GattCharacteristic, GattClientCharacteristicConfigurationDescriptorValue,
-    GattCommunicationStatus, GattValueChangedEventArgs,
+    GattCommunicationStatus, GattDeviceService, GattValueChangedEventArgs,
 };
 use windows::Foundation::TypedEventHandler;
 use windows::Storage::Streams::DataReader;
@@ -229,20 +229,26 @@ fn try_gatt(
         }
     };
 
+    // On fallback, Close() the device before broadcast takes over — dropping
+    // the WinRT object alone doesn't reliably release the OS-level GATT link.
+    let fallback = |msg: &str| -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        log(msg, "warn");
+        let _ = device.Close();
+        Ok(false)
+    };
+
     let hrs_uuid = ble_uuid(0x180D);
     let gatt_result = device
         .GetGattServicesForUuidAsync(hrs_uuid)?
         .get()?;
 
     if gatt_result.Status()? != GattCommunicationStatus::Success {
-        log("[GATT] Cannot access HR Service, falling back to broadcast", "warn");
-        return Ok(false);
+        return fallback("[GATT] Cannot access HR Service, falling back to broadcast");
     }
 
     let services = gatt_result.Services()?;
     if services.Size()? == 0 {
-        log("[GATT] HR Service not found, falling back to broadcast", "warn");
-        return Ok(false);
+        return fallback("[GATT] HR Service not found, falling back to broadcast");
     }
 
     let hr_service = services.GetAt(0)?;
@@ -252,14 +258,12 @@ fn try_gatt(
         .get()?;
 
     if char_result.Status()? != GattCommunicationStatus::Success {
-        log("[GATT] Cannot access HR characteristic, falling back to broadcast", "warn");
-        return Ok(false);
+        return fallback("[GATT] Cannot access HR characteristic, falling back to broadcast");
     }
 
     let chars = char_result.Characteristics()?;
     if chars.Size()? == 0 {
-        log("[GATT] HR characteristic not found, falling back to broadcast", "warn");
-        return Ok(false);
+        return fallback("[GATT] HR characteristic not found, falling back to broadcast");
     }
 
     let hr_char = chars.GetAt(0)?;
@@ -272,8 +276,7 @@ fn try_gatt(
         .get()?;
 
     if notify_status != GattCommunicationStatus::Success {
-        log("[GATT] Failed to enable HR notifications, falling back to broadcast", "warn");
-        return Ok(false);
+        return fallback("[GATT] Failed to enable HR notifications, falling back to broadcast");
     }
 
     log("[GATT] Connected! Receiving HR via GATT", "info");
@@ -299,7 +302,7 @@ fn try_gatt(
             }
             Ok(())
         });
-    hr_char.ValueChanged(&hr_handler)?;
+    let value_changed_token = hr_char.ValueChanged(&hr_handler)?;
 
     // Try to read battery level
     try_read_battery(&device, &log_tx, &app);
@@ -311,18 +314,19 @@ fn try_gatt(
     let bat_stop = stop.clone();
     std::thread::spawn(move || {
         loop {
-            if bat_stop.load(Ordering::Relaxed) {
-                break;
+            // Sleep in 1s steps so the thread exits promptly on stop instead
+            // of lingering (and polling a stale device) for up to 60s.
+            for _ in 0..60 {
+                if bat_stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
-            std::thread::sleep(std::time::Duration::from_secs(60));
-            if bat_stop.load(Ordering::Relaxed) {
-                break;
-            }
-            // Re-read battery from existing device
             if let Ok(dev) = BluetoothLEDevice::FromBluetoothAddressAsync(bat_device_addr)
                 .and_then(|op| op.get())
             {
                 try_read_battery(&dev, &bat_log_tx, &bat_app);
+                let _ = dev.Close();
             }
         }
     });
@@ -332,10 +336,17 @@ fn try_gatt(
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // Disable notifications
-    let _ = hr_char.WriteClientCharacteristicConfigurationDescriptorAsync(
-        GattClientCharacteristicConfigurationDescriptorValue::None,
-    );
+    // Tear down in order: unhook the handler, await the CCCD-disable write
+    // (fire-and-forget gets cancelled when the op is dropped), then Close()
+    // the service and device so Windows actually drops the GATT connection.
+    let _ = hr_char.RemoveValueChanged(value_changed_token);
+    let _ = hr_char
+        .WriteClientCharacteristicConfigurationDescriptorAsync(
+            GattClientCharacteristicConfigurationDescriptorValue::None,
+        )
+        .and_then(|op| op.get());
+    let _ = hr_service.Close();
+    let _ = device.Close();
 
     log("[GATT] Disconnected", "info");
     Ok(true)
@@ -369,55 +380,38 @@ fn try_read_battery(
     let Ok(bat_service) = bat_services.GetAt(0) else {
         return;
     };
-    let Ok(char_result) = bat_service
-        .GetCharacteristicsForUuidAsync(bat_char_uuid)
-        .and_then(|op| op.get())
-    else {
-        return;
-    };
-    if char_result
-        .Status()
-        .unwrap_or(GattCommunicationStatus::Unreachable)
-        != GattCommunicationStatus::Success
-    {
-        return;
+    let level = read_battery_level(&bat_service, bat_char_uuid);
+    let _ = bat_service.Close();
+    if let Some(level) = level {
+        let _ = log_tx.send((format!("[GATT] Battery: {level}%"), "info".to_string()));
+        let _ = app.emit("battery-update", level as u16);
     }
+}
 
-    let Ok(chars) = char_result.Characteristics() else {
-        return;
-    };
-    if chars.Size().unwrap_or(0) == 0 {
-        return;
+fn read_battery_level(service: &GattDeviceService, char_uuid: GUID) -> Option<u8> {
+    let char_result = service
+        .GetCharacteristicsForUuidAsync(char_uuid)
+        .ok()?
+        .get()
+        .ok()?;
+    if char_result.Status().ok()? != GattCommunicationStatus::Success {
+        return None;
     }
-
-    let Ok(bat_char) = chars.GetAt(0) else {
-        return;
-    };
-
-    if let Ok(read_result) = bat_char
-        .ReadValueAsync()
-        .and_then(|op| op.get())
-    {
-        if read_result
-            .Status()
-            .unwrap_or(GattCommunicationStatus::Unreachable)
-            == GattCommunicationStatus::Success
-        {
-            if let Ok(value) = read_result.Value() {
-                if let Ok(reader) = DataReader::FromBuffer(&value) {
-                    if reader.UnconsumedBufferLength().unwrap_or(0) >= 1 {
-                        if let Ok(level) = reader.ReadByte() {
-                            let _ = log_tx.send((
-                                format!("[GATT] Battery: {level}%"),
-                                "info".to_string(),
-                            ));
-                            let _ = app.emit("battery-update", level as u16);
-                        }
-                    }
-                }
-            }
-        }
+    let chars = char_result.Characteristics().ok()?;
+    if chars.Size().ok()? == 0 {
+        return None;
     }
+    let bat_char = chars.GetAt(0).ok()?;
+    let read_result = bat_char.ReadValueAsync().ok()?.get().ok()?;
+    if read_result.Status().ok()? != GattCommunicationStatus::Success {
+        return None;
+    }
+    let value = read_result.Value().ok()?;
+    let reader = DataReader::FromBuffer(&value).ok()?;
+    if reader.UnconsumedBufferLength().ok()? < 1 {
+        return None;
+    }
+    reader.ReadByte().ok()
 }
 
 fn start_broadcast(
@@ -688,6 +682,11 @@ pub async fn connect_and_subscribe(
             }
         }
     }
+
+    // On the device-lost/timeout path nothing else sets this — without it the
+    // blocking GATT/broadcast thread and the battery poller keep running and
+    // hold the GATT connection open.
+    stop_flag.store(true, Ordering::Relaxed);
 
     // Send OSC reset on disconnect
     if *osc_enabled.lock().unwrap() {
