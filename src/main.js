@@ -51,6 +51,7 @@ document.getElementById("closeBtn").addEventListener("click", () => {
 let isConnected = false;
 let beatTimeout = null;
 let connectedDevice = null;
+let currentSource = null; // "ble" | "hds" | null
 
 // ── Elements ──
 const app = document.querySelector(".app");
@@ -297,6 +298,19 @@ listen("connection-changed", (event) => {
   if (!isConnected) {
     document.getElementById("modeBanner").classList.add("hidden");
     document.getElementById("batteryLevel").classList.add("hidden");
+  }
+});
+
+// Which source owns the session ("ble" | "hds" | null). Fired by the backend
+// just before connection-changed, so connectedDevice is ready when the UI
+// switches to the connected layout.
+listen("source-changed", (event) => {
+  currentSource = event.payload;
+  if (currentSource === "hds") {
+    connectedDevice = { name: "Apple Watch (HDS)", id: "" };
+    if (isConnected) updateConnectionUI();
+  } else if (currentSource === null && !isConnected) {
+    connectedDevice = null;
   }
 });
 
@@ -1027,6 +1041,33 @@ document.getElementById("autoReconnectInterval").addEventListener("change", () =
   }
 });
 
+// ── HDS (Apple Watch) settings ──
+async function updateHdsAddress() {
+  const portEl = document.getElementById("hdsPort");
+  const addrEl = document.getElementById("hdsAddress");
+  try {
+    const ip = await invoke("get_lan_ip");
+    addrEl.textContent = ip ? `${ip}:${portEl.value}` : "--";
+  } catch {
+    addrEl.textContent = "--";
+  }
+}
+
+document.getElementById("hdsToggle").addEventListener("click", () => {
+  const enabled = document.getElementById("hdsToggle").dataset.checked === "true";
+  invoke("set_hds_enabled", { enabled });
+  addLog(`HDS receiver ${enabled ? "enabled" : "disabled"}`);
+});
+
+document.getElementById("hdsPort").addEventListener("change", () => {
+  const port = parseInt(document.getElementById("hdsPort").value, 10);
+  if (port > 0 && port <= 65535) {
+    invoke("set_hds_port", { port });
+    addLog(`HDS port set to ${port} (applies after restart)`);
+    updateHdsAddress();
+  }
+});
+
 // ── Remembered devices modal ──
 const rememberedModal = document.getElementById("rememberedModal");
 const rememberedListBody = document.getElementById("rememberedListBody");
@@ -1241,6 +1282,13 @@ async function loadAllSettings() {
 
   const arInterval = await invoke("get_auto_reconnect_interval");
   document.getElementById("autoReconnectInterval").value = arInterval;
+
+  const hdsEnabled = await invoke("get_hds_enabled");
+  document.getElementById("hdsToggle").dataset.checked = hdsEnabled.toString();
+
+  const hdsPortVal = await invoke("get_hds_port");
+  document.getElementById("hdsPort").value = hdsPortVal;
+  updateHdsAddress();
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;

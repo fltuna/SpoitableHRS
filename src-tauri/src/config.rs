@@ -35,6 +35,10 @@ pub struct AppConfig {
     pub auto_reconnect_interval_secs: u64,
     #[serde(default)]
     pub remembered_devices: Vec<RememberedDevice>,
+    #[serde(default = "default_hds_enabled")]
+    pub hds_enabled: bool,
+    #[serde(default = "default_hds_port")]
+    pub hds_port: u16,
 }
 
 impl Default for AppConfig {
@@ -55,8 +59,19 @@ impl Default for AppConfig {
             auto_reconnect_enabled: default_auto_reconnect_enabled(),
             auto_reconnect_interval_secs: default_auto_reconnect_interval(),
             remembered_devices: Vec::new(),
+            hds_enabled: default_hds_enabled(),
+            hds_port: default_hds_port(),
         }
     }
+}
+
+fn default_hds_enabled() -> bool {
+    true
+}
+
+// Health Data Server's standard port — what the watch app suggests by default.
+fn default_hds_port() -> u16 {
+    3476
 }
 
 fn default_auto_reconnect_enabled() -> bool {

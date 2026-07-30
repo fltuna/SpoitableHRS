@@ -2,8 +2,10 @@
 
 mod ble;
 mod config;
+mod hds;
 mod osc;
 mod recorder;
+mod session;
 mod ws;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,12 +15,13 @@ use tauri::State;
 pub struct AppState {
     pub heart_rate: Arc<Mutex<u16>>,
     pub connected: Arc<Mutex<bool>>,
+    /// Which source currently owns the output pipeline (BLE or HDS).
+    pub active_source: Arc<Mutex<Option<session::HrSource>>>,
     pub osc_enabled: Arc<Mutex<bool>>,
     pub osc_port: Arc<Mutex<u16>>,
     pub osc_params: Arc<Mutex<osc::OscParamNames>>,
     pub ble_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pub stop_flag: Arc<AtomicBool>,
-    pub beat_toggle: Arc<AtomicBool>,
     pub ws_broadcaster: Arc<ws::WsBroadcaster>,
     pub ws_enabled: Arc<AtomicBool>,
     pub ws_port: Arc<Mutex<u16>>,
@@ -36,6 +39,25 @@ pub struct AppState {
     /// Cleared on manual connect, app start, or re-enabling auto-reconnect.
     pub auto_reconnect_suspended: Arc<AtomicBool>,
     pub remembered_devices: Arc<Mutex<Vec<config::RememberedDevice>>>,
+    pub hds_enabled: Arc<AtomicBool>,
+    pub hds_port: Arc<Mutex<u16>>,
+    pub hds_session: Arc<Mutex<Option<hds::HdsSessionHandle>>>,
+}
+
+/// Snapshot the shared handles an HR session needs. Used by both the BLE
+/// connect path and the HDS receiver.
+pub fn session_deps(state: &AppState) -> session::SessionDeps {
+    session::SessionDeps {
+        heart_rate: state.heart_rate.clone(),
+        connected: state.connected.clone(),
+        active_source: state.active_source.clone(),
+        osc_enabled: state.osc_enabled.clone(),
+        osc_port: state.osc_port.clone(),
+        osc_params: state.osc_params.clone(),
+        ws_broadcaster: state.ws_broadcaster.clone(),
+        ws_enabled: state.ws_enabled.clone(),
+        graph_interval_ms: state.graph_interval_ms.clone(),
+    }
 }
 
 fn save_config(state: &AppState) {
@@ -55,6 +77,8 @@ fn save_config(state: &AppState) {
         auto_reconnect_enabled: state.auto_reconnect_enabled.load(Ordering::Relaxed),
         auto_reconnect_interval_secs: *state.auto_reconnect_interval_secs.lock().unwrap(),
         remembered_devices: state.remembered_devices.lock().unwrap().clone(),
+        hds_enabled: state.hds_enabled.load(Ordering::Relaxed),
+        hds_port: *state.hds_port.lock().unwrap(),
     };
     config::save(&cfg);
 }
@@ -98,6 +122,12 @@ fn start_connection(app: &tauri::AppHandle, device_id: String, device_name: Stri
     use tauri::Manager;
     let state = app.state::<AppState>();
 
+    // Manual BLE connect is an explicit user action — it takes over from a
+    // live HDS (Apple Watch) session.
+    if let Some(handle) = state.hds_session.lock().unwrap().take() {
+        handle.stop();
+    }
+
     if let Some(handle) = state.ble_handle.lock().unwrap().take() {
         state.stop_flag.store(true, Ordering::Relaxed);
         handle.abort();
@@ -106,24 +136,14 @@ fn start_connection(app: &tauri::AppHandle, device_id: String, device_name: Stri
 
     state.stop_flag.store(false, Ordering::Relaxed);
 
-    let hr = state.heart_rate.clone();
-    let connected = state.connected.clone();
-    let osc_enabled = state.osc_enabled.clone();
-    let osc_port = state.osc_port.clone();
-    let osc_params = state.osc_params.clone();
+    let deps = session_deps(&state);
     let stop = state.stop_flag.clone();
-    let beat_toggle = state.beat_toggle.clone();
-    let ws_bc = state.ws_broadcaster.clone();
-    let ws_enabled = state.ws_enabled.clone();
-    let graph_interval = state.graph_interval_ms.clone();
     let task_app = app.clone();
 
     let handle = tokio::spawn(async move {
-        if let Err(e) = ble::connect_and_subscribe(
-            &device_id, &device_name, hr, connected, osc_enabled, osc_port, osc_params,
-            beat_toggle, ws_bc, ws_enabled, graph_interval, task_app.clone(), stop,
-        )
-        .await
+        if let Err(e) =
+            ble::connect_and_subscribe(&device_id, &device_name, deps, task_app.clone(), stop)
+                .await
         {
             ble::emit_log(&task_app, &format!("BLE error: {e}"), "error");
         }
@@ -153,6 +173,10 @@ async fn disconnect_device(state: State<'_, AppState>) -> Result<(), String> {
     if let Some(handle) = state.ble_handle.lock().unwrap().take() {
         handle.abort();
     }
+    if let Some(handle) = state.hds_session.lock().unwrap().take() {
+        handle.stop();
+    }
+    *state.active_source.lock().unwrap() = None;
     *state.connected.lock().unwrap() = false;
     *state.heart_rate.lock().unwrap() = 0;
 
@@ -345,6 +369,45 @@ fn set_auto_reconnect_interval(state: State<'_, AppState>, interval: u64) {
 #[tauri::command]
 fn get_auto_reconnect_interval(state: State<'_, AppState>) -> u64 {
     *state.auto_reconnect_interval_secs.lock().unwrap()
+}
+
+#[tauri::command]
+fn set_hds_enabled(state: State<'_, AppState>, enabled: bool) {
+    state.hds_enabled.store(enabled, Ordering::Relaxed);
+    if !enabled {
+        // Kill a live watch session right away instead of waiting for timeout.
+        if let Some(handle) = state.hds_session.lock().unwrap().take() {
+            handle.stop();
+        }
+    }
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_hds_enabled(state: State<'_, AppState>) -> bool {
+    state.hds_enabled.load(Ordering::Relaxed)
+}
+
+/// Saved immediately, but the server socket is bound at startup — the new
+/// port takes effect after an app restart (same as the overlay WS port).
+#[tauri::command]
+fn set_hds_port(state: State<'_, AppState>, port: u16) {
+    *state.hds_port.lock().unwrap() = port;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_hds_port(state: State<'_, AppState>) -> u16 {
+    *state.hds_port.lock().unwrap()
+}
+
+/// Primary LAN IPv4 of this machine — what the user types into the watch app.
+/// UDP connect doesn't send packets; it just resolves the outbound interface.
+#[tauri::command]
+fn get_lan_ip() -> Option<String> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    socket.local_addr().ok().map(|a| a.ip().to_string())
 }
 
 #[tauri::command]
@@ -757,17 +820,25 @@ fn main() {
 
             spawn_auto_reconnect(app.handle().clone());
 
+            // HDS (Apple Watch) receiver — always listening; sessions start
+            // themselves when data arrives and hds_enabled is on.
+            let hds_port = *app.state::<AppState>().hds_port.lock().unwrap();
+            let hds_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                hds::start_server(hds_app, hds_port).await;
+            });
+
             Ok(())
         })
         .manage(AppState {
             heart_rate,
             connected,
+            active_source: Arc::new(Mutex::new(None)),
             osc_enabled: Arc::new(Mutex::new(cfg.osc_enabled)),
             osc_port: Arc::new(Mutex::new(cfg.osc_port)),
             osc_params: Arc::new(Mutex::new(cfg.osc_params)),
             ble_handle: Arc::new(Mutex::new(None)),
             stop_flag: Arc::new(AtomicBool::new(false)),
-            beat_toggle: Arc::new(AtomicBool::new(false)),
             ws_broadcaster,
             ws_enabled: Arc::new(AtomicBool::new(cfg.ws_enabled)),
             ws_port: Arc::new(Mutex::new(cfg.ws_port)),
@@ -783,6 +854,9 @@ fn main() {
             auto_reconnect_interval_secs: Arc::new(Mutex::new(cfg.auto_reconnect_interval_secs)),
             auto_reconnect_suspended: Arc::new(AtomicBool::new(false)),
             remembered_devices: Arc::new(Mutex::new(cfg.remembered_devices)),
+            hds_enabled: Arc::new(AtomicBool::new(cfg.hds_enabled)),
+            hds_port: Arc::new(Mutex::new(cfg.hds_port)),
+            hds_session: Arc::new(Mutex::new(None)),
         })
         .invoke_handler(tauri::generate_handler![
             scan_devices,
@@ -818,6 +892,11 @@ fn main() {
             get_auto_reconnect_enabled,
             set_auto_reconnect_interval,
             get_auto_reconnect_interval,
+            set_hds_enabled,
+            get_hds_enabled,
+            set_hds_port,
+            get_hds_port,
+            get_lan_ip,
             get_remembered_devices,
             remove_remembered_device,
             read_hr_records,

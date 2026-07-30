@@ -518,22 +518,14 @@ fn start_broadcast(
 pub async fn connect_and_subscribe(
     device_id: &str,
     device_name: &str,
-    heart_rate: Arc<Mutex<u16>>,
-    connected: Arc<Mutex<bool>>,
-    osc_enabled: Arc<Mutex<bool>>,
-    osc_port: Arc<Mutex<u16>>,
-    osc_params: Arc<Mutex<crate::osc::OscParamNames>>,
-    _beat_toggle: Arc<AtomicBool>,
-    ws_broadcaster: Arc<crate::ws::WsBroadcaster>,
-    ws_enabled: Arc<AtomicBool>,
-    graph_interval_ms: Arc<Mutex<u64>>,
+    deps: crate::session::SessionDeps,
     app: tauri::AppHandle,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let address = parse_address(device_id)?;
 
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<(String, String)>();
-    let (hr_tx, mut rx) = mpsc::unbounded_channel::<u16>();
+    let (hr_tx, rx) = mpsc::unbounded_channel::<u16>();
 
     let log_app = app.clone();
     let log_task = tokio::spawn(async move {
@@ -557,160 +549,25 @@ pub async fn connect_and_subscribe(
         }
     });
 
-    *connected.lock().unwrap() = true;
-    let _ = app.emit("connection-changed", true);
-
-    let hr_sum: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
-    let hr_count: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
-    let hr_min: Arc<Mutex<u16>> = Arc::new(Mutex::new(u16::MAX));
-    let hr_max: Arc<Mutex<u16>> = Arc::new(Mutex::new(0));
-
-    // Beat loop: pulse is_hr_beat (ON 100ms → OFF) at HR-derived interval
-    let beat_hr = heart_rate.clone();
-    let beat_osc_enabled = osc_enabled.clone();
-    let beat_osc_port = osc_port.clone();
-    let beat_osc_params = osc_params.clone();
-    let beat_stop = stop_flag.clone();
-    let beat_app = app.clone();
-    const BEAT_PULSE_MS: u64 = 100;
-    let beat_task = tokio::spawn(async move {
-        loop {
-            if beat_stop.load(Ordering::Relaxed) {
-                break;
-            }
-            let hr = *beat_hr.lock().unwrap();
-            if hr > 0 && *beat_osc_enabled.lock().unwrap() {
-                let cycle_ms = (60_000u64).checked_div(hr as u64).unwrap_or(750);
-                let port = *beat_osc_port.lock().unwrap();
-                let params = beat_osc_params.lock().unwrap().clone();
-
-                // Beat ON
-                let state_on = crate::osc::HrState {
-                    hr, is_connected: true, is_active: true, beat_toggle: true,
-                };
-                if let Err(e) = crate::osc::send_hr_params(port, &params, &state_on) {
-                    emit_log(&beat_app, &format!("OSC send error: {e}"), "error");
-                }
-
-                // Hold ON for pulse duration
-                tokio::time::sleep(std::time::Duration::from_millis(BEAT_PULSE_MS)).await;
-
-                // Beat OFF
-                let state_off = crate::osc::HrState {
-                    hr, is_connected: true, is_active: true, beat_toggle: false,
-                };
-                let _ = crate::osc::send_hr_params(port, &params, &state_off);
-
-                // Wait remaining interval
-                let remaining = cycle_ms.saturating_sub(BEAT_PULSE_MS);
-                tokio::time::sleep(std::time::Duration::from_millis(remaining)).await;
-            } else {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            }
-        }
+    // First real HR packet = the connection actually works;
+    // remember the device for auto-reconnect.
+    let cb_app = app.clone();
+    let cb_id = device_id.to_string();
+    let cb_name = device_name.to_string();
+    let on_first_sample = Box::new(move || {
+        crate::remember_device(&cb_app, &cb_id, &cb_name);
     });
 
-    // WS broadcast loop: sends overlay data at configurable interval
-    let ws_hr = heart_rate.clone();
-    let ws_sum = hr_sum.clone();
-    let ws_count = hr_count.clone();
-    let ws_min = hr_min.clone();
-    let ws_max = hr_max.clone();
-    let ws_stop = stop_flag.clone();
-    let ws_interval = graph_interval_ms;
-    let ws_task = tokio::spawn(async move {
-        loop {
-            if ws_stop.load(Ordering::Relaxed) {
-                break;
-            }
-            if ws_enabled.load(Ordering::Relaxed) {
-                let hr = *ws_hr.lock().unwrap();
-                if hr > 0 {
-                    let count = *ws_count.lock().unwrap();
-                    let avg = if count > 0 {
-                        (*ws_sum.lock().unwrap() / count) as u16
-                    } else {
-                        hr
-                    };
-                    let mn = *ws_min.lock().unwrap();
-                    let mx = *ws_max.lock().unwrap();
-                    let zone = if hr >= 140 {
-                        "hard"
-                    } else if hr >= 120 {
-                        "moderate"
-                    } else if hr >= 100 {
-                        "light"
-                    } else {
-                        "rest"
-                    };
-                    let json = format!(
-                        r#"{{"type":"hr_update","bpm":{hr},"zone":"{zone}","connected":true,"avg":{avg},"min":{mn},"max":{mx}}}"#
-                    );
-                    ws_broadcaster.send(&json);
-                }
-            }
-            let interval = *ws_interval.lock().unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(interval)).await;
-        }
-    });
+    crate::session::run_session(
+        crate::session::HrSource::Ble,
+        rx,
+        deps,
+        app,
+        stop_flag,
+        Some(on_first_sample),
+    )
+    .await;
 
-    // BLE receive loop: update shared state + emit UI event
-    // Timeout after 10s of no packets = device lost
-    let mut device_remembered = false;
-    loop {
-        if stop_flag.load(Ordering::Relaxed) {
-            break;
-        }
-        match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
-            Ok(Some(hr)) => {
-                // First real HR packet = the connection actually works;
-                // remember the device for auto-reconnect.
-                if !device_remembered {
-                    device_remembered = true;
-                    crate::remember_device(&app, device_id, device_name);
-                }
-                *hr_sum.lock().unwrap() += hr as u64;
-                *hr_count.lock().unwrap() += 1;
-                if hr < *hr_min.lock().unwrap() {
-                    *hr_min.lock().unwrap() = hr;
-                }
-                if hr > *hr_max.lock().unwrap() {
-                    *hr_max.lock().unwrap() = hr;
-                }
-
-                *heart_rate.lock().unwrap() = hr;
-                let _ = app.emit("heart-rate-update", hr);
-            }
-            Ok(None) => break,
-            Err(_) => {
-                emit_log(&app, "No BLE signal for 10s — device lost", "warn");
-                break;
-            }
-        }
-    }
-
-    // Send OSC reset on disconnect
-    if *osc_enabled.lock().unwrap() {
-        let port = *osc_port.lock().unwrap();
-        let params = osc_params.lock().unwrap().clone();
-        let _ = crate::osc::send_hr_params(
-            port,
-            &params,
-            &crate::osc::HrState {
-                hr: 0,
-                is_connected: false,
-                is_active: false,
-                beat_toggle: false,
-            },
-        );
-    }
-
-    beat_task.abort();
-    ws_task.abort();
-    *heart_rate.lock().unwrap() = 0;
-    emit_log(&app, "Connection ended", "info");
-    *connected.lock().unwrap() = false;
-    let _ = app.emit("connection-changed", false);
     log_task.abort();
     Ok(())
 }
