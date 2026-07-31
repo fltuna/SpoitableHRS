@@ -564,6 +564,7 @@ pub async fn connect_and_subscribe(
         deps,
         app,
         stop_flag,
+        10_000,
         Some(on_first_sample),
     )
     .await;

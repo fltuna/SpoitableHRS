@@ -166,6 +166,10 @@
             <div class="s-row"><span class="s-label" data-i18n="settings.hdsPort">Port</span>
               <input type="number" id="hdsPort" class="s-input s-input-short" min="1" max="65535" step="1" value="3476">
             </div>
+            <div class="s-row"><span class="s-label" data-i18n="settings.hdsTimeout">Disconnect after silence</span>
+              <input type="number" id="hdsTimeout" class="s-input s-input-short" min="10" max="300" step="5" value="60">
+              <span class="s-unit">s</span>
+            </div>
             <div class="s-row"><span class="s-label" data-i18n="settings.hdsAddress">Watch app address</span><span class="zone-range" id="hdsAddress">--</span></div>
             <div class="about-text" data-i18n="settings.hdsHint">Enter the address above in the Health Data Server watch app. Allow access when Windows Firewall asks (private network). Port changes apply after restart.</div>
           </div>

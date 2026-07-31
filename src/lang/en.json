@@ -49,6 +49,7 @@
   "settings.hdsEnable": "Receive from Apple Watch",
   "settings.hdsPort": "Port",
   "settings.hdsAddress": "Watch app address",
+  "settings.hdsTimeout": "Disconnect after silence",
   "settings.hdsHint": "Enter the address above in the Health Data Server watch app. Allow access when Windows Firewall asks (private network). Port changes apply after restart.",
   "settings.aboutHeader": "About",
   "settings.aboutDesc": "BLE Heart Rate Monitor for VRChat, OBS",

@@ -1068,6 +1068,14 @@ document.getElementById("hdsPort").addEventListener("change", () => {
   }
 });
 
+document.getElementById("hdsTimeout").addEventListener("change", () => {
+  const val = parseInt(document.getElementById("hdsTimeout").value, 10);
+  if (val >= 10 && val <= 300) {
+    invoke("set_hds_timeout", { timeout: val });
+    addLog(`HDS disconnect timeout: ${val}s`);
+  }
+});
+
 // ── Remembered devices modal ──
 const rememberedModal = document.getElementById("rememberedModal");
 const rememberedListBody = document.getElementById("rememberedListBody");
@@ -1289,6 +1297,9 @@ async function loadAllSettings() {
   const hdsPortVal = await invoke("get_hds_port");
   document.getElementById("hdsPort").value = hdsPortVal;
   updateHdsAddress();
+
+  const hdsTimeoutVal = await invoke("get_hds_timeout");
+  document.getElementById("hdsTimeout").value = hdsTimeoutVal;
 
   const savedLang = await invoke("get_language");
   document.getElementById("langSelect").value = savedLang;

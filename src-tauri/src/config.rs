@@ -39,6 +39,8 @@ pub struct AppConfig {
     pub hds_enabled: bool,
     #[serde(default = "default_hds_port")]
     pub hds_port: u16,
+    #[serde(default = "default_hds_timeout_secs")]
+    pub hds_timeout_secs: u64,
 }
 
 impl Default for AppConfig {
@@ -61,8 +63,15 @@ impl Default for AppConfig {
             remembered_devices: Vec::new(),
             hds_enabled: default_hds_enabled(),
             hds_port: default_hds_port(),
+            hds_timeout_secs: default_hds_timeout_secs(),
         }
     }
+}
+
+// HealthKit HR delivery is sparse (~5s, tens of seconds on wrist-down),
+// so the HDS timeout is far longer than BLE's 10s.
+fn default_hds_timeout_secs() -> u64 {
+    60
 }
 
 fn default_hds_enabled() -> bool {

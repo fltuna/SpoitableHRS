@@ -41,6 +41,7 @@ pub struct AppState {
     pub remembered_devices: Arc<Mutex<Vec<config::RememberedDevice>>>,
     pub hds_enabled: Arc<AtomicBool>,
     pub hds_port: Arc<Mutex<u16>>,
+    pub hds_timeout_secs: Arc<Mutex<u64>>,
     pub hds_session: Arc<Mutex<Option<hds::HdsSessionHandle>>>,
 }
 
@@ -79,6 +80,7 @@ fn save_config(state: &AppState) {
         remembered_devices: state.remembered_devices.lock().unwrap().clone(),
         hds_enabled: state.hds_enabled.load(Ordering::Relaxed),
         hds_port: *state.hds_port.lock().unwrap(),
+        hds_timeout_secs: *state.hds_timeout_secs.lock().unwrap(),
     };
     config::save(&cfg);
 }
@@ -399,6 +401,20 @@ fn set_hds_port(state: State<'_, AppState>, port: u16) {
 #[tauri::command]
 fn get_hds_port(state: State<'_, AppState>) -> u16 {
     *state.hds_port.lock().unwrap()
+}
+
+/// Applies to the next session (an already-running session keeps the timeout
+/// it started with).
+#[tauri::command]
+fn set_hds_timeout(state: State<'_, AppState>, timeout: u64) {
+    let clamped = timeout.clamp(10, 300);
+    *state.hds_timeout_secs.lock().unwrap() = clamped;
+    save_config(&state);
+}
+
+#[tauri::command]
+fn get_hds_timeout(state: State<'_, AppState>) -> u64 {
+    *state.hds_timeout_secs.lock().unwrap()
 }
 
 /// Primary LAN IPv4 of this machine — what the user types into the watch app.
@@ -856,6 +872,7 @@ fn main() {
             remembered_devices: Arc::new(Mutex::new(cfg.remembered_devices)),
             hds_enabled: Arc::new(AtomicBool::new(cfg.hds_enabled)),
             hds_port: Arc::new(Mutex::new(cfg.hds_port)),
+            hds_timeout_secs: Arc::new(Mutex::new(cfg.hds_timeout_secs)),
             hds_session: Arc::new(Mutex::new(None)),
         })
         .invoke_handler(tauri::generate_handler![
@@ -896,6 +913,8 @@ fn main() {
             get_hds_enabled,
             set_hds_port,
             get_hds_port,
+            set_hds_timeout,
+            get_hds_timeout,
             get_lan_ip,
             get_remembered_devices,
             remove_remembered_device,

@@ -98,6 +98,9 @@ fn ingest_hr(app: &tauri::AppHandle, bpm: u16) {
     emit_log(app, "HDS: Apple Watch connected", "info");
 
     let deps = crate::session_deps(&state);
+    // Sparse by design: HealthKit delivers HR every ~5s and pauses for tens
+    // of seconds on wrist-down, so the timeout is much longer than BLE's.
+    let timeout_ms = *state.hds_timeout_secs.lock().unwrap() * 1000;
     let task_app = app.clone();
     tauri::async_runtime::spawn(async move {
         crate::session::run_session(
@@ -106,6 +109,7 @@ fn ingest_hr(app: &tauri::AppHandle, bpm: u16) {
             deps,
             task_app.clone(),
             stop.clone(),
+            timeout_ms,
             None,
         )
         .await;

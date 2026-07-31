@@ -42,14 +42,15 @@ pub struct SessionDeps {
     pub graph_interval_ms: Arc<Mutex<u64>>,
 }
 
-const NO_SIGNAL_TIMEOUT_MS: u64 = 10_000;
 /// How often the receive loop wakes to check the stop flag while idle.
 const STOP_POLL_MS: u64 = 200;
 
 /// Run one HR session: mark connected, pump incoming HR values through the
 /// output pipeline (UI event, OSC beat loop, overlay WS), and tear everything
-/// down when the source stops for NO_SIGNAL_TIMEOUT_MS, the channel closes,
-/// or the stop flag is set. `on_first_sample` fires once when the first HR
+/// down when the source stops for `no_signal_timeout_ms`, the channel closes,
+/// or the stop flag is set. The timeout is per-source: BLE broadcasts every
+/// second, but HDS delivery pauses for tens of seconds on wrist-down, so each
+/// caller picks its own. `on_first_sample` fires once when the first HR
 /// value actually arrives (used by BLE to remember the device).
 pub async fn run_session(
     source: HrSource,
@@ -57,6 +58,7 @@ pub async fn run_session(
     deps: SessionDeps,
     app: tauri::AppHandle,
     stop_flag: Arc<AtomicBool>,
+    no_signal_timeout_ms: u64,
     mut on_first_sample: Option<Box<dyn FnMut() + Send>>,
 ) {
     *deps.active_source.lock().unwrap() = Some(source);
@@ -162,7 +164,7 @@ pub async fn run_session(
 
     // Receive loop: update shared state + emit UI event.
     // Short poll so a raised stop flag is honored quickly; a session ends on
-    // its own only after NO_SIGNAL_TIMEOUT_MS without a sample.
+    // its own only after no_signal_timeout_ms without a sample.
     let mut first_sample = true;
     let mut last_sample = std::time::Instant::now();
     loop {
@@ -197,10 +199,14 @@ pub async fn run_session(
             }
             Ok(None) => break,
             Err(_) => {
-                if last_sample.elapsed().as_millis() as u64 >= NO_SIGNAL_TIMEOUT_MS {
+                if last_sample.elapsed().as_millis() as u64 >= no_signal_timeout_ms {
                     emit_log(
                         &app,
-                        &format!("No {} signal for 10s — source lost", source.label()),
+                        &format!(
+                            "No {} signal for {}s — source lost",
+                            source.label(),
+                            no_signal_timeout_ms / 1000
+                        ),
                         "warn",
                     );
                     break;
